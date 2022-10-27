@@ -72,6 +72,11 @@ describe("CLDAuction", function () {
       ).to.be.revertedWith(
         "CLDAuction.DepositETC: Deposit amount not high enough"
       );
+
+      // Lets check the getter function is working as it should 
+      const PartInfo = await AuctionInstance.CheckParticipant(thisUser.address);
+      await expect(PartInfo[0]).to.equal(ethers.utils.parseEther("1.0"))
+
     }
     const AuctionEtherBalance = await ethers.provider.getBalance(
       AuctionInstance.address
@@ -150,17 +155,20 @@ describe("CLDAuction", function () {
     const AuctionEtherBalance = await ethers.provider.getBalance(
       AuctionInstance.address
     );
-    const AuctionExpectedBalance = await ethers.utils.parseEther("5.0");
+    const AuctionExpectedBalance = await AuctionInstance.CurrentETCBalance();
 
     expect(AuctionEtherBalance).to.equal(
       AuctionExpectedBalance,
       "This error shall not be seen"
     );
 
-    
+    for (let thisUser of [alice, bob, carol, david, erin]) {
+      const ParticipantPoolShare = await AuctionInstance.CheckParticipant(thisUser.address);
+      console.log(ParticipantPoolShare[1])
+      //await expect(ParticipantPoolShare[1]).to.be(AuctionInstance, "ETCDeposited");
+    }
 
   });
-
 
   // it("helpful comment, add more tests here", async function () {
   // });
