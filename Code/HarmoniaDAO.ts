@@ -57,8 +57,6 @@ describe("CLDAuction", function () {
     const { AuctionInstance } = await loadFixture(deployContractsFixture);
     const [alice, bob, carol, david, erin] = await ethers.getSigners();
 
-    // assert.equal((await ethers.provider.getBalance(AuctionInstance.address)), ethers.utils.parseEther("0"), "Balance should be 0")
-
     for (let thisUser of [alice, bob, carol, david, erin]) {
       // Send some CLD to test users, make them approve it to the VotingSystem contract
       await expect(
@@ -135,11 +133,34 @@ describe("CLDAuction", function () {
       "ETCDWithdrawed"
     );
   });
-  /*
-    it("rejects unauthorized transactions, executes the proposals correctly, burning and paying the executioner's cut", async function () {
-       
-    });
-*/
+
+  it("Allows each Participant to withdraw their share of the pooled CLD", async function () {
+    const { AuctionInstance } = await loadFixture(deployContractsFixture);
+    const [alice, bob, carol, david, erin] =await ethers.getSigners();
+
+    for (let thisUser of [alice, bob, carol, david, erin]) {
+      // Send some CLD to test users, make them approve it to the VotingSystem contract
+      await expect(
+        AuctionInstance.connect(thisUser).DepositETC({
+          value: ethers.utils.parseEther("1.0"),
+        })
+      ).to.emit(AuctionInstance, "ETCDeposited");
+    }
+
+    const AuctionEtherBalance = await ethers.provider.getBalance(
+      AuctionInstance.address
+    );
+    const AuctionExpectedBalance = await ethers.utils.parseEther("5.0");
+
+    expect(AuctionEtherBalance).to.equal(
+      AuctionExpectedBalance,
+      "This error shall not be seen"
+    );
+
+    
+
+  });
+
 
   // it("helpful comment, add more tests here", async function () {
   // });
