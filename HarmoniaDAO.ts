@@ -22,7 +22,7 @@ describe("CLDAuction", function () {
     const cldAuctFFactory = await ethers.getContractFactory(
       "CLDDao_Auction_Factory"
     );
-    const CLDAucFactory = await cldAuctFFactory.deploy();
+    const CLDAucFactory = await cldAuctFFactory.deploy(alice.address, CLD.address);
     await CLDAucFactory.deployed();
 
     // Create a test CLDAuction
@@ -87,7 +87,7 @@ describe("CLDAuction", function () {
 
     expect(AuctionEtherBalance).to.equal(
       AuctionExpectedBalance,
-      "This error shall not be seen"
+      "This error shall not be seen, the ether balance in the contract is correct"
     );
 
     await network.provider.send("evm_increaseTime", [120]);
@@ -125,7 +125,7 @@ describe("CLDAuction", function () {
 
     expect(AuctionEtherBalance).to.equal(
       AuctionExpectedBalance,
-      "This error shall not be seen"
+      "This error shall not be seen, both ether balance and TestValue are equal"
     );
 
     // We will not see this, the sale is not over yet
@@ -143,9 +143,8 @@ describe("CLDAuction", function () {
   });
 
   it("correctly calculates the share of the pool for each participant", async function () {
-    const { AuctionInstance } = await loadFixture(deployContractsFixture);
+    const { AuctionInstance, CLD } = await loadFixture(deployContractsFixture);
     const [alice, bob, carol, david, erin] =await ethers.getSigners();
-    // You can modify this and nothing will happen 
     const TestValue = await ethers.utils.parseEther("3.141592")
 
     // Everyone has 1/5 of the pooled ETC here
@@ -162,7 +161,7 @@ describe("CLDAuction", function () {
     // Balance should be 5 ether
     expect(AuctionEtherBalance).to.equal(
       AuctionExpectedBalance,
-      "This error shall not be seen"
+      "This error shall not be seen, balance should be TestValue*5 ether"
     );
     await expect(
       AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
@@ -200,6 +199,14 @@ describe("CLDAuction", function () {
         "This error shall not be seen"
       );
     }
+    await network.provider.send("evm_increaseTime", [120]);
+
+    // We won't see this, but it's related to the withdraw CLD test. 
+    for (let thisUser of [alice, bob, carol, david, erin]) {
+      await expect(
+         AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
+       ).to.emit(AuctionInstance, "CLDWithdrawed");
+     }
 
   });
 
@@ -265,11 +272,10 @@ describe("CLDAuction", function () {
 
     // Everyone should have 1/5 of 10e18 CLD here
     for (let thisUser of [alice, bob, carol, david, erin]) {
-      await expect(
+     await expect(
         AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
       ).to.emit(AuctionInstance, "CLDWithdrawed");
-      //await expect(CLD.balanceOf(thisUser.address)).to.be(BigInt((10000000000000000000n) /5))
-      
+      expect(await CLD.balanceOf(thisUser.address)).to.equal(BigInt(2000000000000000000));
     }
   });
 
