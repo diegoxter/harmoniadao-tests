@@ -9,6 +9,7 @@ const {
 describe("CLDAuction", function () {
   async function deployContractsFixture() {
     const [ alice, bob, maria, joao ] = await ethers.getSigners();
+    const RetireeFee = 100;
 
     const cldFactory = await ethers.getContractFactory("ClassicDAO");
     const CLD = await cldFactory.deploy(
@@ -31,6 +32,7 @@ describe("CLDAuction", function () {
         120,
         10000000000000000000n, 
         ethers.utils.parseEther("0.1"), 
+        RetireeFee,
         [bob.address, maria.address, joao.address]
       )
     ).to.emit(CLDAucFactory, "NewAuction");
@@ -52,7 +54,7 @@ describe("CLDAuction", function () {
     );
     expect(await CLD.balanceOf(AuctionInstance.address)).to.equal(10000000000000000000n);
 
-    return { CLD, CLDAucFactory, AuctionInstance };
+    return { CLD, CLDAucFactory, AuctionInstance, RetireeFee };
   }
 
   it("is initialized correctly, with a test auction set", async function () {
@@ -145,6 +147,7 @@ describe("CLDAuction", function () {
       AuctionInstance,
       "ETCDWithdrawed"
     );
+
   });
 
   it("correctly calculates the share of the pool for each participant", async function () {
@@ -216,7 +219,7 @@ describe("CLDAuction", function () {
   });
 
   it("allows participants to retire their ether", async function () {
-    const { AuctionInstance } = await loadFixture(deployContractsFixture);
+    const { AuctionInstance, RetireeFee } = await loadFixture(deployContractsFixture);
     const [alice, bob, carol, david, erin] =await ethers.getSigners();
     const TestValue = await ethers.utils.parseEther("3.141592")
     const Operator = 2
@@ -242,7 +245,7 @@ describe("CLDAuction", function () {
         "This error shall not be seen as both participants have TestValue/Operator"
       ); // TO DO
       expect(await AuctionInstance.ETCDeductedFromRetirees()).to.equal(
-        BigInt((((TestValue/2)*4)/100)*iterator),
+        BigInt((((TestValue/2)*RetireeFee)/10000)*iterator),
         "This error shall not be seen as both participants have TestValue/Operator"
       );
 
@@ -257,9 +260,13 @@ describe("CLDAuction", function () {
     ).to.emit(AuctionInstance, "ParticipantRetired");
     const NewAlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
     expect(NewAlicePoolShare[0]).to.below(
-      BigInt(49155),  // The previous operations leave just a little bit of ether in the contract
+      BigInt(53765),  // The previous operations leave just a little bit of ether in the contract
       "This error shall not be seen as Alice has 0 ether in the sale"
       );
+
+    // TO DO check the RetireeFees are being collected
+    // TO DO check the CLD withdrawed is still correctly calculated
+
   });
 
   it("allows each Participant to withdraw their share of the pooled CLD", async function () {

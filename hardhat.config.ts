@@ -9,9 +9,9 @@ module.exports = {
   networks: {
     fantom_testnet: {
       url: `https://rpc.testnet.fantom.network/`,
-      accounts: {
+      /*accounts: {
         mnemonic: MNEMONIC,
-      },
+      },*/
       chainId: 4002,    
     },
   },
