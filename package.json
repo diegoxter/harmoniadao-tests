@@ -10,7 +10,8 @@
       "format:check": "prettier --check ./*.{js,ts,sol}",
       "format:write": "prettier --write ./*.{js,ts,sol}",
       "prepare": "husky install",
-      "test": "hardhat test ./HarmoniaDAO.ts"
+      "test:auction": "hardhat test ./tests/CLDAuction.ts",
+      "test:treasury": "hardhat test ./tests/Treasury.ts"
     },
     "devDependencies": {
       "@commitlint/config-conventional": "^12.1.4",
