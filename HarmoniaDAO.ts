@@ -11,11 +11,11 @@ describe("CLDAuction", function () {
     const [ alice, bob, maria, joao ] = await ethers.getSigners();
     const RetireeFee = 100;
 
-    const cldFactory = await ethers.getContractFactory("ClassicDAO");
+    const cldFactory = await ethers.getContractFactory("HTA1");
     const CLD = await cldFactory.deploy(
       10000000000000000000n,
-      "MockCLD",
-      "MCLD"
+      "MockERC20",
+      "MTKN"
     );
     await CLD.deployed();
     expect(await CLD.balanceOf(alice.address)).to.equal(10000000000000000000n);
