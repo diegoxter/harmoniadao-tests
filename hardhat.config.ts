@@ -6,6 +6,9 @@ const MNEMONIC = process.env.MNEMONIC;
 
 module.exports = {
   solidity: "0.8.17",
+  mocha: {
+    timeout: 100000000
+  },
   networks: {
     fantom_testnet: {
       url: `https://rpc.testnet.fantom.network/`,

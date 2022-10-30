@@ -1,15 +1,11 @@
 const { expect } = require("chai");
 const { BigNumber } = require("ethers");
 const { artifacts, contract, ethers, network } = require("hardhat");
-const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
-const {
-  changeTokenBalances,
-} = require("@nomicfoundation/hardhat-chai-matchers");
+require("@nomicfoundation/hardhat-chai-matchers");
 
 describe("CLDAuction", function () {
-  async function deployContractsFixture() {
-    const [ alice, bob, maria, joao ] = await ethers.getSigners();
-    const RetireeFee = 100;
+  async function deployMockToken() {
+    const [ alice ] = await ethers.getSigners();
 
     const cldFactory = await ethers.getContractFactory("HTA1");
     const CLD = await cldFactory.deploy(
@@ -19,21 +15,54 @@ describe("CLDAuction", function () {
     );
     await CLD.deployed();
     expect(await CLD.balanceOf(alice.address)).to.equal(10000000000000000000n);
+  
+    return { CLD };
+  }
+
+  async function deployTreasury(token_address) {
+    const [ alice ] = await ethers.getSigners();
+    
+    const treasuryFactory = await ethers.getContractFactory(
+      "HarmoniaDAOTreasury"
+    );
+    const Treasury = await treasuryFactory.deploy(alice.address, token_address);
+    await Treasury.deployed();
+
+    return { Treasury }
+  }
+
+  async function transferMockToken(CLD_Address, deployer, to) {
+    await expect(
+    CLD_Address.connect(deployer).transfer(
+      to.address,
+      10000000000000000000n
+    )
+    ).to.changeTokenBalances(
+    CLD_Address,
+    [deployer, to.address],
+    [-10000000000000000000n, 10000000000000000000n]
+    );
+    expect(await CLD_Address.balanceOf(to.address)).to.equal(10000000000000000000n);
+  }
+
+  async function deployAuctionFixture(treasury_address, token_address) {
+    const [ alice, bob, carol, david ] = await ethers.getSigners();
+    const RetireeFee = 100;
 
     const cldAuctFFactory = await ethers.getContractFactory(
       "CLDDao_Auction_Factory"
     );
-    const CLDAucFactory = await cldAuctFFactory.deploy(alice.address, CLD.address);
+    const CLDAucFactory = await cldAuctFFactory.deploy(alice.address, treasury_address, token_address);
     await CLDAucFactory.deployed();
 
     // Create a test CLDAuction
     await expect(
       CLDAucFactory.newCLDAuction(
-        120,
+        15,
         10000000000000000000n, 
-        ethers.utils.parseEther("0.1"), 
+        ethers.utils.parseEther("0.001"),
         RetireeFee,
-        [bob.address, maria.address, joao.address]
+        [bob.address, carol.address, david.address]
       )
     ).to.emit(CLDAucFactory, "NewAuction");
     const AuctInstanceBase = await CLDAucFactory.SeeAuctionData(0);
@@ -42,32 +71,16 @@ describe("CLDAuction", function () {
       `${AuctInstanceBase[0]}`
     );
 
-    await expect(
-      CLD.connect(alice).transfer(
-        AuctionInstance.address,
-        10000000000000000000n
-      )
-    ).to.changeTokenBalances(
-      CLD,
-      [alice, AuctionInstance.address],
-      [-10000000000000000000n, 10000000000000000000n]
-    );
-    expect(await CLD.balanceOf(AuctionInstance.address)).to.equal(10000000000000000000n);
-
-    return { CLD, CLDAucFactory, AuctionInstance, RetireeFee };
+    return { CLDAucFactory, AuctionInstance };
   }
 
-  it("is initialized correctly, with a test auction set", async function () {
-    await loadFixture(deployContractsFixture);
-  });
+  it("handles Ether deposits, denies them when not high enough and after auction expires", async function () {
+    const [ alice, bob, carol, david, erin, random ] = await ethers.getSigners();
+    const { AuctionInstance } = await deployAuctionFixture(random.address, random.address);
+    const TestValue = await ethers.utils.parseEther("0.004")
 
-  it("supports depositing Ether, denies deposits after auction time expires", async function () {
-    const { AuctionInstance } = await loadFixture(deployContractsFixture);
-    const [alice, bob, carol, david, erin] = await ethers.getSigners();
-    const TestValue = await ethers.utils.parseEther("3.141592")
-
-    for (let thisUser of [alice, bob, carol, david, erin]) {
-      // Send some CLD to test users, make them approve it to the VotingSystem contract
+    for (let thisUser of [ alice, bob, carol, david, erin ]) {
+      // Depositing some Ether
       await expect(
         AuctionInstance.connect(thisUser).DepositETC({
           value: TestValue,
@@ -76,17 +89,16 @@ describe("CLDAuction", function () {
       // We will not see this, value sent is too low
       await expect(
         AuctionInstance.connect(thisUser).DepositETC({
-          value: ethers.utils.parseEther("0.01"),
+          value: (TestValue/4),
         })
       ).to.be.revertedWith(
         "CLDAuction.DepositETC: Deposit amount not high enough"
       );
-
       // Lets check the getter function is working as it should 
       const PartInfo = await AuctionInstance.CheckParticipant(thisUser.address);
       await expect(PartInfo[0]).to.equal(TestValue)
-
     }
+
     const AuctionEtherBalance = await ethers.provider.getBalance(
       AuctionInstance.address
     );
@@ -94,10 +106,12 @@ describe("CLDAuction", function () {
 
     expect(AuctionEtherBalance).to.equal(
       AuctionExpectedBalance,
-      "This error shall not be seen, the ether balance in the contract is correct"
+      "This error shall not be seen, the ether balance in the contract is TestValue * 5"
     );
 
-    await network.provider.send("evm_increaseTime", [120]);
+    // Time related code
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    await delay(8500);
 
     for (let thisUser of [alice, bob, carol, david, erin]) {
       // We will not see this, the Auction time expired
@@ -109,54 +123,63 @@ describe("CLDAuction", function () {
     }
   });
 
-  it("supports withdrawing the Ether once the Auction period is over", async function () {
-    const { AuctionInstance } = await loadFixture(deployContractsFixture);
-    const [alice] = await ethers.getSigners();
-    const TestValue = await ethers.utils.parseEther("3.141592")
+  it("handles withdrawing of Ether once the auction period is over", async function () {
+    const [ alice, random ] = await ethers.getSigners();
+    const { AuctionInstance } = await deployAuctionFixture(random.address, random.address);
+    const TestValue = await ethers.utils.parseEther("0.004")
 
     await expect(
       await ethers.provider.getBalance(AuctionInstance.address)
     ).to.equal(0, "Balance should be 0");
 
     // TO DO check for OnlyDAO modifier compatibility
-    // We will not see this, the Auction time expired
     expect(
       await AuctionInstance.connect(alice).DepositETC({
         value: TestValue,
       })
     ).to.emit(AuctionInstance, "ETCDeposited");
+    
     const AuctionEtherBalance = await ethers.provider.getBalance(
       AuctionInstance.address
     );
-    const AuctionExpectedBalance = TestValue;
-
     expect(AuctionEtherBalance).to.equal(
-      AuctionExpectedBalance,
-      "This error shall not be seen, both ether balance and TestValue are equal"
+      TestValue,
+      "This error shall not be seen, both contract's ether balance and TestValue are equal"
     );
 
     // We will not see this, the sale is not over yet
     await expect(
       AuctionInstance.connect(alice).WithdrawETC()
     ).to.be.revertedWith("CLDAuction.WithdrawETC: The sale is not over yet");
+    
+    // Time related code
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    await delay(15900);
 
-    await network.provider.send("evm_increaseTime", [120]);
-
-    // TO DO check for OnlyDAO modifier compatibility
     expect(await AuctionInstance.connect(alice).WithdrawETC()).to.emit(
       AuctionInstance,
       "ETCDWithdrawed"
     );
 
+    const AuctionNewEtherBalance = await ethers.provider.getBalance(
+      AuctionInstance.address
+    );
+    expect(AuctionNewEtherBalance).to.equal(
+      0,
+      "This error shall not be seen, the contract has 0 ether"
+    );
   });
 
-  it("correctly calculates the share of the pool for each participant", async function () {
-    const { AuctionInstance, CLD } = await loadFixture(deployContractsFixture);
-    const [alice, bob, carol, david, erin] =await ethers.getSigners();
-    const TestValue = await ethers.utils.parseEther("3.141592")
+  it("calculates the TokenShare for each participant, splits the prize accordingly", async function () {
+    const { CLD } = await deployMockToken();
+    const { AuctionInstance } = await deployAuctionFixture(CLD.address, CLD.address);
+    const [ alice, bob, carol, david, erin ] =await ethers.getSigners();
+    const TestValue = await ethers.utils.parseEther("0.004")
+    // Let's get some tokens into the contract
+    await transferMockToken(CLD, alice, AuctionInstance)
 
     // Everyone has 1/5 of the pooled ETC here
-    for (let thisUser of [alice, bob, carol, david, erin]) {
+    for (let thisUser of [ alice, bob, carol, david, erin ]) {
       await expect(
         AuctionInstance.connect(thisUser).DepositETC({
           value: TestValue,
@@ -169,7 +192,7 @@ describe("CLDAuction", function () {
     // Balance should be 5 ether
     expect(AuctionEtherBalance).to.equal(
       AuctionExpectedBalance,
-      "This error shall not be seen, balance should be TestValue*5 ether"
+      "This error shall not be seen, balance should be (TestValue * 5) ether"
     );
     await expect(
       AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
@@ -184,13 +207,11 @@ describe("CLDAuction", function () {
     }
 
     //Now Alice has 60% of the pool
-    for (let i = 0; i < 5; i++) {
-      await expect(
-        AuctionInstance.connect(alice).DepositETC({
-          value: TestValue,
-        })
-      ).to.emit(AuctionInstance, "ETCDeposited");
-    }
+    await expect(
+      AuctionInstance.connect(alice).DepositETC({
+        value: (BigInt(TestValue*5)),
+      })
+    ).to.emit(AuctionInstance, "ETCDeposited");
 
     await expect(
       AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
@@ -198,105 +219,138 @@ describe("CLDAuction", function () {
     const AlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
     expect(AlicePoolShare[1]).to.equal(
       6000,
-      "This error shall not be seen"
+      "This error shall not be seen, as Alice has 60% of the TokenShare"
     );
     for (let thisUser of [bob, carol, david, erin]) {
       const ParticipantPoolShare = await AuctionInstance.CheckParticipant(thisUser.address);
       expect(ParticipantPoolShare[1]).to.equal(
         1000,
-        "This error shall not be seen"
+        "This error shall not be seen, as everyone else holds only 10% each"
       );
     }
-    await network.provider.send("evm_increaseTime", [120]);
 
-    // We won't see this, but it's related to the withdraw CLD test. 
-    for (let thisUser of [alice, bob, carol, david, erin]) {
+    // Time related code
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    await delay(5000);
+
+    // Testing the MTKN gets correctly split between participants
+    const TotalMTKN = await CLD.totalSupply();
+    const QuarterOfTotalMTKN = ((TotalMTKN*40) / 100)/4;
+    await expect(
+      AuctionInstance.connect(alice).WithdrawCLD(alice.address)
+    ).to.emit(AuctionInstance, "CLDWithdrawed");
+    const AliceTokenBalance = await CLD.balanceOf(alice.address);
+    await expect(AliceTokenBalance).to.equal(BigInt((TotalMTKN*60)/100));
+
+    for (let thisUser of [ bob, carol, david, erin]) {
       await expect(
          AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
        ).to.emit(AuctionInstance, "CLDWithdrawed");
+       // These addresses hold 1/4 of 10 MTKN each
+       const UserTokenBalance = await CLD.balanceOf(thisUser.address);
+       await expect(UserTokenBalance).to.equal(BigInt(QuarterOfTotalMTKN));
      }
+
+     // No MTKN left in the auction contract after all that
+     const AuctionokenBalance = await CLD.balanceOf(AuctionInstance.address);
+     await expect(AuctionokenBalance).to.equal(0);
 
   });
 
-  it("allows participants to retire their ether", async function () {
-    const { AuctionInstance, RetireeFee } = await loadFixture(deployContractsFixture);
-    const [alice, bob, carol, david, erin] =await ethers.getSigners();
-    const TestValue = await ethers.utils.parseEther("3.141592")
-    const Operator = 2
-
-    for (let thisUser of [alice, bob, carol, david, erin]) {
+  it("allows people to retire from auctions, updates the TokenShare and splits the prize accorndingly", async function () {
+    const { CLD } = await deployMockToken();
+    const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
+    const { Treasury } = await deployTreasury(CLD.address)
+    const { AuctionInstance } = await deployAuctionFixture(CLD.address, Treasury.address);
+    const TestValue = await ethers.utils.parseEther("0.004");
+    const Operator = 2;
+    // Let's get some tokens into the contract
+    await transferMockToken(CLD, alice, AuctionInstance);
+    // aqui
+    const OneDevOGEtherBalance = await ethers.provider.getBalance(bob.address)
+    for (let thisUser of [ alice, bob, carol, david, erin ]) {
       await expect(
         AuctionInstance.connect(thisUser).DepositETC({
           value: TestValue,
         })
       ).to.emit(AuctionInstance, "ETCDeposited");
     }
-
-    let iterator = 1;
-    // TO DO make this depending on contract value
-    for (let thisUser of [bob, carol, erin]) {
+    const OneOGContractEtherBalance = await ethers.provider.getBalance(AuctionInstance.address)
+    
+    const AuctionRetireeFee = await AuctionInstance.RetireeFee();
+    let iteration = 1;
+    for (let thisUser of [ bob, carol ]) {
       await expect(
-        AuctionInstance.connect(thisUser).RetireFromAuction(BigInt(TestValue/Operator), thisUser.address)
+        AuctionInstance.connect(thisUser).RetireFromAuction(BigInt(TestValue/2))
       ).to.emit(AuctionInstance, "ParticipantRetired");
 
       const ParticipantPoolShare = await AuctionInstance.CheckParticipant(thisUser.address);
-      expect(ParticipantPoolShare[0]).to.equal(
+      expect(ParticipantPoolShare[0]).to.be.at.least(
         BigInt(TestValue/Operator),
-        "This error shall not be seen as both participants have TestValue/Operator"
-      ); // TO DO
-      expect(await AuctionInstance.ETCDeductedFromRetirees()).to.equal(
-        BigInt((((TestValue/2)*RetireeFee)/10000)*iterator),
         "This error shall not be seen as both participants have TestValue/Operator"
       );
 
-      iterator += 1;
+      //Here we verify the ETCDeductedFromRetirees gets higher
+      const AuctionDeductedEher = await AuctionInstance.ETCDeductedFromRetirees();
+      const ShouldBeTheDeductedEther = (((TestValue/Operator)*AuctionRetireeFee)/10000)*iteration
+      await expect(AuctionDeductedEher).to.be.equal(BigInt(ShouldBeTheDeductedEther))
+      //The balance of ether in the contract should be deducted correctly
+      expect(await ethers.provider.getBalance(AuctionInstance.address))
+      .to.be.equal(BigInt(((OneOGContractEtherBalance) - ((TestValue/Operator)*iteration-(ShouldBeTheDeductedEther)))))
+      iteration += 1;
     }
 
+    // TO DO fix this // Here we empty Alice deposits
     const AlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
-    const EstimateGas = await AuctionInstance.estimateGas.RetireFromAuction(ethers.utils.parseEther("2.0"), alice.address);
-    const ActualRetiredValue = BigInt((AlicePoolShare[0]-EstimateGas))
+    const EstimateGas = await AuctionInstance.estimateGas.RetireFromAuction(AlicePoolShare[0]-((AlicePoolShare[0]*500)/10000));
+    const ActualRetiredValue = BigInt(AlicePoolShare[0]-EstimateGas)
+    // Balance after two participants withdrawed
+    const SecondContractBalance = BigInt(await ethers.provider.getBalance(AuctionInstance.address));
     await expect(
-      AuctionInstance.connect(alice).RetireFromAuction(ActualRetiredValue, alice.address)
+      AuctionInstance.connect(alice).RetireFromAuction(ActualRetiredValue)
     ).to.emit(AuctionInstance, "ParticipantRetired");
     const NewAlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
     expect(NewAlicePoolShare[0]).to.below(
-      BigInt(53765),  // The previous operations leave just a little bit of ether in the contract
-      "This error shall not be seen as Alice has 0 ether in the sale"
-      );
+      BigInt(53965),  // The previous operations leave just a little bit of ether in the contract
+      "This error shall not be seen as Alice has retired almos all her ether in the sale"
+    );
+    // Testing the balance holds the correct amount of ether
+    let FeeTake = ActualRetiredValue*BigInt(AuctionRetireeFee)/BigInt(10000)
+    expect(await ethers.provider.getBalance(AuctionInstance.address))
+    .to.be.equal(BigInt(SecondContractBalance-(ActualRetiredValue-FeeTake)))
 
-    // TO DO check the RetireeFees are being collected
-    // TO DO check the CLD withdrawed is still correctly calculated
-
-  });
-
-  it("allows each Participant to withdraw their share of the pooled CLD", async function () {
-    const { AuctionInstance, CLD } = await loadFixture(deployContractsFixture);
-    const [alice, bob, carol, david, erin] =await ethers.getSigners();
-    // You can modify this and nothing will happen 
-    const TestValue = await ethers.utils.parseEther("1.0")
-
-    // Everyone has 1/5 of the pooled ETC here
-    for (let thisUser of [alice, bob, carol, david, erin]) {
-      await expect(
-        AuctionInstance.connect(thisUser).DepositETC({
-          value: TestValue,
-        })
-      ).to.emit(AuctionInstance, "ETCDeposited");
-    }
-
-    // Update the TokenShare, time
     await expect(
       AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
     ).to.emit(AuctionInstance, "UpdatedPooledTokenShare");
-    await network.provider.send("evm_increaseTime", [120]);
 
-    // Everyone should have 1/5 of 10e18 CLD here
-    for (let thisUser of [alice, bob, carol, david, erin]) {
-     await expect(
-        AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
-      ).to.emit(AuctionInstance, "CLDWithdrawed");
-      expect(await CLD.balanceOf(thisUser.address)).to.equal(BigInt(2000000000000000000));
+    // Time related code
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    await delay(5000);
+
+    // Here we verify the MTKN is split correctly after retirees hit the sack
+    const TotalMTKN = await CLD.totalSupply();
+
+    for (let thisUser of [ alice, bob, carol, david, erin ]) {
+      await expect(
+         AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
+       ).to.emit(AuctionInstance, "CLDWithdrawed");
+
+      const UserTokenBalance = await CLD.balanceOf(thisUser.address);
+      const UserPoolShare = await AuctionInstance.CheckParticipant(thisUser.address);
+
+      await expect(UserTokenBalance).to.be.equal(BigInt(((TotalMTKN*UserPoolShare[1])/10000)));
     }
+
+    // TO DO verify the ETCDeductedFromRetirees gets sent to the devs
+    const OneDevEtherBalance = await ethers.provider.getBalance(bob.address);
+
+    await expect(OneDevEtherBalance).to.be.at.most(BigInt((OneDevOGEtherBalance-TestValue)+TestValue/Operator));
+    
+    expect(await AuctionInstance.connect(alice).WithdrawETC()).to.emit(
+      AuctionInstance,
+      "ETCDWithdrawed"
+    );
+
   });
 
   // it("helpful comment, add more tests here", async function () {
