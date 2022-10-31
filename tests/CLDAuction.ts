@@ -19,45 +19,58 @@ describe("CLDAuction", function () {
     return { CLD };
   }
 
-  async function deployTreasury(token_address) {
-    const [ alice ] = await ethers.getSigners();
-    
+  // Deploy the FakeDAO, soon real DAO
+  async function deployDAO() {    
+    const daoFactory = await ethers.getContractFactory(
+      "FakeDAO"
+    );
+    const DAO = await daoFactory.deploy();
+    await DAO.deployed();
+
+    return { DAO }
+  }
+
+  async function deployTreasury(dao_address ,token_address) {    
     const treasuryFactory = await ethers.getContractFactory(
       "HarmoniaDAOTreasury"
     );
-    const Treasury = await treasuryFactory.deploy(alice.address, token_address);
+    const Treasury = await treasuryFactory.deploy(dao_address, token_address);
     await Treasury.deployed();
 
     return { Treasury }
   }
 
-  async function transferMockToken(CLD_Address, deployer, to) {
-    await expect(
-    CLD_Address.connect(deployer).transfer(
-      to.address,
-      10000000000000000000n
-    )
-    ).to.changeTokenBalances(
-    CLD_Address,
-    [deployer, to.address],
-    [-10000000000000000000n, 10000000000000000000n]
-    );
+  async function transferMockToken(CLD_Address, DAO, deployer, Treasury, to) {
+    //Should be sent to the treasury
+    await CLD_Address.connect(deployer).transfer(Treasury.address, 10000000000000000000n)
+    expect(await CLD_Address.balanceOf(Treasury.address)).to.equal(10000000000000000000n);
+
+    //Send the tokens from the treasury to the Auction
+    await DAO.connect(deployer).TreasuryERC20Transfer(0, 10000000000000000000n, to.address)
     expect(await CLD_Address.balanceOf(to.address)).to.equal(10000000000000000000n);
+
   }
 
-  async function deployAuctionFixture(treasury_address, token_address) {
+  async function deployAuctionFixture(dao_address, treasury_address, token_address) {
     const [ alice, bob, carol, david ] = await ethers.getSigners();
     const RetireeFee = 100;
+
+    const DAOFactory = await ethers.getContractFactory("FakeDAO");
+    const DAOInstance = await DAOFactory.attach(dao_address);
 
     const cldAuctFFactory = await ethers.getContractFactory(
       "CLDDao_Auction_Factory"
     );
-    const CLDAucFactory = await cldAuctFFactory.deploy(alice.address, treasury_address, token_address);
+    const CLDAucFactory = await cldAuctFFactory.deploy(dao_address, treasury_address, token_address);
     await CLDAucFactory.deployed();
 
+    // Lets connect both CLDAuction and DAO
+    await DAOInstance.SetAuctionFactory(CLDAucFactory.address);
+
     // Create a test CLDAuction
+
     await expect(
-      CLDAucFactory.newCLDAuction(
+      await DAOInstance.NewTokenAuction(
         15,
         10000000000000000000n, 
         ethers.utils.parseEther("0.001"),
@@ -76,7 +89,9 @@ describe("CLDAuction", function () {
 
   it("handles Ether deposits, denies them when not high enough and after auction expires", async function () {
     const [ alice, bob, carol, david, erin, random ] = await ethers.getSigners();
-    const { AuctionInstance } = await deployAuctionFixture(random.address, random.address);
+    const { DAO } = await deployDAO()
+    // We don't care about that random.address here, no need for Treasury or token
+    const { AuctionInstance } = await deployAuctionFixture(DAO.address, random.address, random.address);
     const TestValue = await ethers.utils.parseEther("0.004")
 
     for (let thisUser of [ alice, bob, carol, david, erin ]) {
@@ -125,7 +140,9 @@ describe("CLDAuction", function () {
 
   it("handles withdrawing of Ether once the auction period is over", async function () {
     const [ alice, random ] = await ethers.getSigners();
-    const { AuctionInstance } = await deployAuctionFixture(random.address, random.address);
+    const { DAO } = await deployDAO();
+    // We don't care about that random.address here, no need for Treasury or token
+    const { AuctionInstance } = await deployAuctionFixture(DAO.address, random.address, random.address);
     const TestValue = await ethers.utils.parseEther("0.004")
 
     await expect(
@@ -172,11 +189,15 @@ describe("CLDAuction", function () {
 
   it("calculates the TokenShare for each participant, splits the prize accordingly", async function () {
     const { CLD } = await deployMockToken();
-    const { AuctionInstance } = await deployAuctionFixture(CLD.address, CLD.address);
+    const { DAO } = await deployDAO();
+    const { Treasury } = await deployTreasury(DAO.address, CLD.address)
+    const { AuctionInstance } = await deployAuctionFixture(DAO.address, CLD.address, CLD.address);
     const [ alice, bob, carol, david, erin ] =await ethers.getSigners();
     const TestValue = await ethers.utils.parseEther("0.004")
-    // Let's get some tokens into the contract
-    await transferMockToken(CLD, alice, AuctionInstance)
+    // Set the Treasury in the DAO
+    await DAO.connect(alice).SetTreasury(Treasury.address);
+    // Let's get some tokens into the contract, dire
+    await transferMockToken(CLD, DAO, alice, Treasury, AuctionInstance)
 
     // Everyone has 1/5 of the pooled ETC here
     for (let thisUser of [ alice, bob, carol, david, erin ]) {
@@ -232,14 +253,14 @@ describe("CLDAuction", function () {
     const TotalMTKN = await CLD.totalSupply();
     const QuarterOfTotalMTKN = ((TotalMTKN*40) / 100)/4;
     await expect(
-      AuctionInstance.connect(alice).WithdrawCLD(alice.address)
+      AuctionInstance.connect(alice).WithdrawCLD()
     ).to.emit(AuctionInstance, "CLDWithdrawed");
     const AliceTokenBalance = await CLD.balanceOf(alice.address);
     await expect(AliceTokenBalance).to.equal(BigInt((TotalMTKN*60)/100));
 
     for (let thisUser of [ bob, carol, david, erin]) {
       await expect(
-         AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
+         AuctionInstance.connect(thisUser).WithdrawCLD()
        ).to.emit(AuctionInstance, "CLDWithdrawed");
        // These addresses hold 1/4 of 10 MTKN each
        const UserTokenBalance = await CLD.balanceOf(thisUser.address);
@@ -255,12 +276,15 @@ describe("CLDAuction", function () {
   it("allows people to retire from auctions, updates the TokenShare and splits the prize accorndingly", async function () {
     const { CLD } = await deployMockToken();
     const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
-    const { Treasury } = await deployTreasury(CLD.address)
-    const { AuctionInstance } = await deployAuctionFixture(CLD.address, Treasury.address);
+    const { DAO } = await deployDAO()
+    const { Treasury } = await deployTreasury(DAO.address, CLD.address)
+    const { AuctionInstance } = await deployAuctionFixture(DAO.address, CLD.address, Treasury.address);
     const TestValue = await ethers.utils.parseEther("0.004");
     const Operator = 2;
+    // Set the Treasury in the DAO, alice is the deployer
+    await DAO.connect(alice).SetTreasury(Treasury.address);
     // Let's get some tokens into the contract
-    await transferMockToken(CLD, alice, AuctionInstance);
+    await transferMockToken(CLD, DAO, alice, Treasury, AuctionInstance);
     // aqui
     const OneDevOGEtherBalance = await ethers.provider.getBalance(bob.address)
     for (let thisUser of [ alice, bob, carol, david, erin ]) {
@@ -321,12 +345,12 @@ describe("CLDAuction", function () {
     const TotalMTKN = await CLD.totalSupply();
     // Alice doesnt have a share, so no piece of pie for her
     await expect(
-      AuctionInstance.connect(alice).WithdrawCLD(alice.address)
+      AuctionInstance.connect(alice).WithdrawCLD()
     ).to.be.revertedWith("CLDAuction.WithdrawCLD: You didn't buy any CLD");
 
     for (let thisUser of [ bob, carol, david, erin ]) {
       await expect(
-         AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
+         AuctionInstance.connect(thisUser).WithdrawCLD()
        ).to.emit(AuctionInstance, "CLDWithdrawed");
 
       const UserTokenBalance = await CLD.balanceOf(thisUser.address);
@@ -344,6 +368,34 @@ describe("CLDAuction", function () {
       AuctionInstance,
       "ETCDWithdrawed"
     );
+
+  });
+
+  it("handles OnlyDAO modifier correctly", async function () {
+    const [ alice, bob, carol, david, erin, random ] = await ethers.getSigners();
+    const { DAO } = await deployDAO()
+    const { Treasury } = await deployTreasury(DAO.address, random.address)
+    const { AuctionInstance } = await deployAuctionFixture(DAO.address, random.address, Treasury.address);
+
+    // Set the Treasury in the DAO, alice is the deployer
+    await DAO.connect(alice).SetTreasury(Treasury.address);
+    let count = 1
+    // All these tests should be reverted because:
+    for (let thisUser of [ alice, bob, carol, david, erin ]) {
+      // They don't have permission
+      await expect(AuctionInstance.connect(thisUser).AddDev(thisUser.address))
+      .to.be.revertedWith("This can only be done by the DAO")
+
+    }
+    for (let thisUser of [ bob, carol, david ]) {
+      // They are already devs
+      await expect(DAO.connect(alice).AddAucInstanceDevAddress(AuctionInstance.address ,thisUser.address))
+      .to.be.revertedWith("CLDAuction.AddDev: This user is already set as a dev")
+    }
+
+    // This shouldn't fail
+    await expect(DAO.connect(alice).AddAucInstanceDevAddress(AuctionInstance.address, erin.address))
+    .to.emit(AuctionInstance, "NewDevAdded")
 
   });
 
