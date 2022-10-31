@@ -194,13 +194,11 @@ describe("CLDAuction", function () {
       AuctionExpectedBalance,
       "This error shall not be seen, balance should be (TestValue * 5) ether"
     );
-    await expect(
-      AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
-    ).to.emit(AuctionInstance, "UpdatedPooledTokenShare");
+
     // Everyone has 1/5 of the pool
     for (let thisUser of [alice, bob, carol, david, erin]) {
       const ParticipantPoolShare = await AuctionInstance.CheckParticipant(thisUser.address);
-      expect(ParticipantPoolShare[1]).to.equal(
+      expect(ParticipantPoolShare[2]).to.equal(
         2000,
         "This error shall not be seen"
       );
@@ -213,17 +211,14 @@ describe("CLDAuction", function () {
       })
     ).to.emit(AuctionInstance, "ETCDeposited");
 
-    await expect(
-      AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
-    ).to.emit(AuctionInstance, "UpdatedPooledTokenShare");
     const AlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
-    expect(AlicePoolShare[1]).to.equal(
+    expect(AlicePoolShare[2]).to.equal(
       6000,
       "This error shall not be seen, as Alice has 60% of the TokenShare"
     );
     for (let thisUser of [bob, carol, david, erin]) {
       const ParticipantPoolShare = await AuctionInstance.CheckParticipant(thisUser.address);
-      expect(ParticipantPoolShare[1]).to.equal(
+      expect(ParticipantPoolShare[2]).to.equal(
         1000,
         "This error shall not be seen, as everyone else holds only 10% each"
       );
@@ -231,7 +226,7 @@ describe("CLDAuction", function () {
 
     // Time related code
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    await delay(5000);
+    await delay(10000);
 
     // Testing the MTKN gets correctly split between participants
     const TotalMTKN = await CLD.totalSupply();
@@ -302,35 +297,34 @@ describe("CLDAuction", function () {
 
     // TO DO fix this // Here we empty Alice deposits
     const AlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
-    const EstimateGas = await AuctionInstance.estimateGas.RetireFromAuction(AlicePoolShare[0]-((AlicePoolShare[0]*500)/10000));
-    const ActualRetiredValue = BigInt(AlicePoolShare[0]-EstimateGas)
+    const AliceBalance = BigInt(AlicePoolShare[0])
     // Balance after two participants withdrawed
     const SecondContractBalance = BigInt(await ethers.provider.getBalance(AuctionInstance.address));
     await expect(
-      AuctionInstance.connect(alice).RetireFromAuction(ActualRetiredValue)
+      AuctionInstance.connect(alice).RetireFromAuction(AlicePoolShare[0])
     ).to.emit(AuctionInstance, "ParticipantRetired");
     const NewAlicePoolShare = await AuctionInstance.CheckParticipant(alice.address);
-    expect(NewAlicePoolShare[0]).to.below(
-      BigInt(53965),  // The previous operations leave just a little bit of ether in the contract
+    expect(NewAlicePoolShare[0]).to.be.equal(
+      0,  // The previous operations leave just a little bit of ether in the contract
       "This error shall not be seen as Alice has retired almos all her ether in the sale"
     );
     // Testing the balance holds the correct amount of ether
-    let FeeTake = ActualRetiredValue*BigInt(AuctionRetireeFee)/BigInt(10000)
+    const WhatAliceReceivedAfterRetiring = (AliceBalance*BigInt(AuctionRetireeFee))/BigInt(10000)
     expect(await ethers.provider.getBalance(AuctionInstance.address))
-    .to.be.equal(BigInt(SecondContractBalance-(ActualRetiredValue-FeeTake)))
-
-    await expect(
-      AuctionInstance.connect(alice).MassUpdatePooledTokenShare()
-    ).to.emit(AuctionInstance, "UpdatedPooledTokenShare");
+    .to.be.equal(BigInt(SecondContractBalance  - (AliceBalance-WhatAliceReceivedAfterRetiring)))
 
     // Time related code
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    await delay(5000);
+    await delay(15000);
 
     // Here we verify the MTKN is split correctly after retirees hit the sack
     const TotalMTKN = await CLD.totalSupply();
+    // Alice doesnt have a share, so no piece of pie for her
+    await expect(
+      AuctionInstance.connect(alice).WithdrawCLD(alice.address)
+    ).to.be.revertedWith("CLDAuction.WithdrawCLD: You didn't buy any CLD");
 
-    for (let thisUser of [ alice, bob, carol, david, erin ]) {
+    for (let thisUser of [ bob, carol, david, erin ]) {
       await expect(
          AuctionInstance.connect(thisUser).WithdrawCLD(thisUser.address)
        ).to.emit(AuctionInstance, "CLDWithdrawed");
