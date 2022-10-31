@@ -1,92 +1,113 @@
-const { expect } = require("chai");
-const { BigNumber } = require("ethers");
-const { artifacts, contract, ethers, network } = require("hardhat");
-require("@nomicfoundation/hardhat-chai-matchers");
+const { expect } = require('chai')
+const { BigNumber } = require('ethers')
+const { artifacts, contract, ethers, network } = require('hardhat')
+require('@nomicfoundation/hardhat-chai-matchers')
 
-describe("CLDAuction", function () {
-  async function deployMockToken() {
-    const [ alice ] = await ethers.getSigners();
+describe('CLDAuction', function () {
+    async function deployMockToken() {
+        const [alice] = await ethers.getSigners()
 
-    const cldFactory = await ethers.getContractFactory("HTA1");
-    const CLD = await cldFactory.deploy(
-      10000000000000000000n,
-      "MockERC20",
-      "MTKN"
-    );
-    await CLD.deployed();
-    expect(await CLD.balanceOf(alice.address)).to.equal(10000000000000000000n);
-  
-    return { CLD };
-  }
+        const cldFactory = await ethers.getContractFactory('HTA1')
+        const CLD = await cldFactory.deploy(
+            10000000000000000000n,
+            'MockERC20',
+            'MTKN'
+        )
+        await CLD.deployed()
+        expect(await CLD.balanceOf(alice.address)).to.equal(
+            10000000000000000000n
+        )
 
-  // Deploy the FakeDAO, soon real DAO
-  async function deployDAO() {    
-    const daoFactory = await ethers.getContractFactory(
-      "FakeDAO"
-    );
-    const DAO = await daoFactory.deploy();
-    await DAO.deployed();
+        return { CLD }
+    }
 
-    return { DAO }
-  }
+    // Deploy the FakeDAO, soon real DAO
+    async function deployDAO() {
+        const daoFactory = await ethers.getContractFactory('FakeDAO')
+        const DAO = await daoFactory.deploy()
+        await DAO.deployed()
 
-  async function deployTreasury(dao_address ,token_address) {    
-    const treasuryFactory = await ethers.getContractFactory(
-      "HarmoniaDAOTreasury"
-    );
-    const Treasury = await treasuryFactory.deploy(dao_address, token_address);
-    await Treasury.deployed();
+        return { DAO }
+    }
 
-    return { Treasury }
-  }
+    async function deployTreasury(dao_address, token_address) {
+        const treasuryFactory = await ethers.getContractFactory(
+            'HarmoniaDAOTreasury'
+        )
+        const Treasury = await treasuryFactory.deploy(
+            dao_address,
+            token_address
+        )
+        await Treasury.deployed()
 
-  async function transferMockToken(CLD_Address, DAO, deployer, Treasury, to) {
-    //Should be sent to the treasury
-    await CLD_Address.connect(deployer).transfer(Treasury.address, 10000000000000000000n)
-    expect(await CLD_Address.balanceOf(Treasury.address)).to.equal(10000000000000000000n);
+        return { Treasury }
+    }
 
-    //Send the tokens from the treasury to the Auction
-    await DAO.connect(deployer).TreasuryERC20Transfer(0, 10000000000000000000n, to.address)
-    expect(await CLD_Address.balanceOf(to.address)).to.equal(10000000000000000000n);
+    async function transferMockToken(CLD_Address, DAO, deployer, Treasury, to) {
+        //Should be sent to the treasury
+        await CLD_Address.connect(deployer).transfer(
+            Treasury.address,
+            10000000000000000000n
+        )
+        expect(await CLD_Address.balanceOf(Treasury.address)).to.equal(
+            10000000000000000000n
+        )
 
-  }
+        //Send the tokens from the treasury to the Auction
+        await DAO.connect(deployer).TreasuryERC20Transfer(
+            0,
+            10000000000000000000n,
+            to.address
+        )
+        expect(await CLD_Address.balanceOf(to.address)).to.equal(
+            10000000000000000000n
+        )
+    }
 
-  async function deployAuctionFixture(dao_address, treasury_address, token_address) {
-    const [ alice, bob, carol, david ] = await ethers.getSigners();
-    const RetireeFee = 100;
+    async function deployAuctionFixture(
+        dao_address,
+        treasury_address,
+        token_address
+    ) {
+        const [alice, bob, carol, david] = await ethers.getSigners()
+        const RetireeFee = 100
 
-    const DAOFactory = await ethers.getContractFactory("FakeDAO");
-    const DAOInstance = await DAOFactory.attach(dao_address);
+        const DAOFactory = await ethers.getContractFactory('FakeDAO')
+        const DAOInstance = await DAOFactory.attach(dao_address)
 
-    const cldAuctFFactory = await ethers.getContractFactory(
-      "CLDDao_Auction_Factory"
-    );
-    const CLDAucFactory = await cldAuctFFactory.deploy(dao_address, treasury_address, token_address);
-    await CLDAucFactory.deployed();
+        const cldAuctFFactory = await ethers.getContractFactory(
+            'CLDDao_Auction_Factory'
+        )
+        const CLDAucFactory = await cldAuctFFactory.deploy(
+            dao_address,
+            treasury_address,
+            token_address
+        )
+        await CLDAucFactory.deployed()
 
-    // Lets connect both CLDAuction and DAO
-    await DAOInstance.SetAuctionFactory(CLDAucFactory.address);
+        // Lets connect both CLDAuction and DAO
+        await DAOInstance.SetAuctionFactory(CLDAucFactory.address)
 
-    // Create a test CLDAuction
+        // Create a test CLDAuction
 
-    await expect(
-      await DAOInstance.NewTokenAuction(
-        15,
-        10000000000000000000n, 
-        ethers.utils.parseEther("0.001"),
-        RetireeFee,
-        [bob.address, carol.address, david.address]
-      )
-    ).to.emit(CLDAucFactory, "NewAuction");
-    const AuctInstanceBase = await CLDAucFactory.SeeAuctionData(0);
-    const AuctionFactory = await ethers.getContractFactory("CLDDao_Auction");
-    const AuctionInstance = await AuctionFactory.attach(
-      `${AuctInstanceBase[0]}`
-    );
+        await expect(
+            await DAOInstance.NewTokenAuction(
+                15,
+                10000000000000000000n,
+                ethers.utils.parseEther('0.001'),
+                RetireeFee,
+                [bob.address, carol.address, david.address]
+            )
+        ).to.emit(CLDAucFactory, 'NewAuction')
+        const AuctInstanceBase = await CLDAucFactory.SeeAuctionData(0)
+        const AuctionFactory = await ethers.getContractFactory('CLDDao_Auction')
+        const AuctionInstance = await AuctionFactory.attach(
+            `${AuctInstanceBase[0]}`
+        )
 
-    return { CLDAucFactory, AuctionInstance };
-  }
-
+        return { CLDAucFactory, AuctionInstance }
+    }
+    
   it("handles Ether deposits, denies them when not high enough and after auction expires", async function () {
     const [ alice, bob, carol, david, erin, random ] = await ethers.getSigners();
     const { DAO } = await deployDAO()
@@ -371,34 +392,68 @@ describe("CLDAuction", function () {
 
   });
 
-  it("handles OnlyDAO modifier correctly", async function () {
-    const [ alice, bob, carol, david, erin, random ] = await ethers.getSigners();
-    const { DAO } = await deployDAO()
-    const { Treasury } = await deployTreasury(DAO.address, random.address)
-    const { AuctionInstance } = await deployAuctionFixture(DAO.address, random.address, Treasury.address);
+    it('handles OnlyDAO modifier correctly, also adds devs as needed', async function () {
+        const [alice, bob, carol, david, erin, random, random2, random3] =
+            await ethers.getSigners()
+        const { DAO } = await deployDAO()
+        const { Treasury } = await deployTreasury(DAO.address, random.address)
+        // This first random address is the token's address, we don't need to deploy anything here
+        const { AuctionInstance } = await deployAuctionFixture(
+            DAO.address,
+            random.address,
+            Treasury.address
+        )
+        // Set the Treasury in the DAO, alice is the deployer
+        await DAO.connect(alice).SetTreasury(Treasury.address)
+        // All these tests should be reverted because:
+        for (let thisUser of [alice, bob, carol, david, erin]) {
+            // They don't have permission
+            await expect(
+                AuctionInstance.connect(thisUser).AddDev(thisUser.address)
+            ).to.be.revertedWith('This can only be done by the DAO')
+            await expect(
+                AuctionInstance.connect(thisUser).AddDevs([
+                    david.address,
+                    carol.address,
+                    bob.address,
+                ])
+            ).to.be.revertedWith('This can only be done by the DAO')
+        }
+        for (let thisUser of [bob, carol, david]) {
+            // They are already devs
+            await expect(
+                DAO.connect(alice).AddAucInstanceDevAddress(
+                    AuctionInstance.address,
+                    thisUser.address
+                )
+            ).to.be.revertedWith(
+                'CLDAuction.AddDev: This user is already set as a dev'
+            )
+            await expect(
+                DAO.connect(alice).AddAucInstanceDevAddresses(
+                    AuctionInstance.address,
+                    [david.address, carol.address, bob.address]
+                )
+            ).to.be.revertedWith(
+                'CLDAuction.AddDev: This user is already set as a dev'
+            )
+        }
 
-    // Set the Treasury in the DAO, alice is the deployer
-    await DAO.connect(alice).SetTreasury(Treasury.address);
-    let count = 1
-    // All these tests should be reverted because:
-    for (let thisUser of [ alice, bob, carol, david, erin ]) {
-      // They don't have permission
-      await expect(AuctionInstance.connect(thisUser).AddDev(thisUser.address))
-      .to.be.revertedWith("This can only be done by the DAO")
+        // This shouldn't fail, both transactions are run by the DAO
+        await expect(
+            DAO.connect(alice).AddAucInstanceDevAddress(
+                AuctionInstance.address,
+                erin.address
+            )
+        ).to.emit(AuctionInstance, 'NewDevAdded')
+        await expect(
+            DAO.connect(alice).AddAucInstanceDevAddresses(
+                AuctionInstance.address,
+                [random.address, random2.address, random3.address]
+            )
+        ).to.emit(AuctionInstance, 'NewDevAdded')
+    })
 
-    }
-    for (let thisUser of [ bob, carol, david ]) {
-      // They are already devs
-      await expect(DAO.connect(alice).AddAucInstanceDevAddress(AuctionInstance.address ,thisUser.address))
-      .to.be.revertedWith("CLDAuction.AddDev: This user is already set as a dev")
-    }
-
-    // This shouldn't fail
-    await expect(DAO.connect(alice).AddAucInstanceDevAddress(AuctionInstance.address, erin.address))
-    .to.emit(AuctionInstance, "NewDevAdded")
-
-  });
-
-  // it("helpful comment, add more tests here", async function () {
-  // });
-});
+    // it("helpful comment, add more tests here", async function () {
+    // });
+})

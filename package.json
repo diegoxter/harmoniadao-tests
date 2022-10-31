@@ -7,8 +7,8 @@
     "author": "Jiego",
     "license": "MIT",
     "scripts": {
-      "format:check": "prettier --check ./*.{js,ts,sol}",
-      "format:write": "prettier --write ./*.{js,ts,sol}",
+      "format:check": "prettier --check ./**/*.{js,ts,sol}",
+      "format:write": "prettier --write ./**/*.{js,ts,sol}",
       "prepare": "husky install",
       "test:auction": "hardhat test ./tests/CLDAuction.ts",
       "test:treasury": "hardhat test ./tests/Treasury.ts"
