@@ -48,17 +48,24 @@ describe("Treasury", function () {
 
     /* Stuff to test:
     *
-    * ReceiveRegisteredAsset
-    * UserAssetClaim
-    * AssetClaim
-    * TransferERC20
     * RegisterAsset
     * ChangeRegisteredAssetLimit
     * IsRegistered
+    * ReceiveRegisteredAsset
+    * TransferERC20
+    // it('interacts correctly with ERC20 assets', async function () {
+    // });
+    * UserAssetClaim
+    * AssetClaim
+    // it("helpful comment, add more tests here", async function () {
+    // });
     * GetBackingValueEther
     * GetBackingValueAsset
-    * 
+    // it("helpful comment, add more tests here", async function () {
+    // });
     */
+
+    
     // it("helpful comment, add more tests here", async function () {
     // });
 });
