@@ -155,10 +155,16 @@ describe('VotingSystem', function () {
         // IncentiveAmount + ApprovingVotes (in this test case)
         expect(OGCLDBalance)
             .to.be.equal(BigInt(proposalInfBfr[8])+BigInt(proposalInfBfr[5]))
-
+        
+        let ErinsBalance = await CLD.balanceOf(erin.address)
         await expect(
             VSystem.connect(erin).ExecuteProposal(0)
         ).to.emit(VSystem, "ProposalPassed");
+        // This one should fail
+        await expect(
+            VSystem.connect(erin).ExecuteProposal(0)
+        ).to.be.revertedWith('Proposal already executed!');
+
         // Check it's actually executed
         let proposalInfo = await VSystem.SeeProposalInfo(0);
         // As the proposal passed it should be 1
@@ -180,16 +186,121 @@ describe('VotingSystem', function () {
         .to.equal(BigInt(OGProposalIncAmount)+BigInt(OGProposalData[5])-
             (BigInt(OGProposalData[10])+BigInt(OGProposalData[11])));
 
-        // TO DO check the executer received the tokens
+        // The executer received the tokens
+        expect(await CLD.balanceOf(erin.address))
+        .to.equal(BigInt(ErinsBalance) + BigInt(OGProposalData[11]))
+    });
+
+    it("returns the tokens to each voter correctly, only when the voting is over", async function () {
+        const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
+        const { CLD } = await deployMockToken()
+        const { VSystem } = await deployVoting(CLD)
+        const votes = 1000
+        const incentiveAmount = 235720
+
+        const OGBalance = await CLD.balanceOf(bob.address)
+        for (let thisUser of [ alice, bob, carol ]) {
+            await expect(VSystem.connect(thisUser).CastVote(votes, 0, 0)
+            ).to.emit(VSystem, "CastedVote");
+
+            await expect(
+                VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
+            ).to.emit(VSystem, "ProposalIncentivized");
+        }
+        // Save this for later use
+        const ContractAfterVoteBalance = await CLD.balanceOf(VSystem.address)
+
+        const AfterVoteBalance = await CLD.balanceOf(bob.address)
+        expect(OGBalance)
+        .to.equal(BigInt(AfterVoteBalance) + BigInt(votes) + BigInt(235720))
+        // These should fail
+        await expect(
+            VSystem.connect(david).WithdrawMyTokens(0))
+        .to.be.revertedWith('Proposal has not been executed!')
+        await expect(
+            VSystem.connect(erin).WithdrawMyTokens(0))
+        .to.be.revertedWith('Proposal has not been executed!')
+
+        // Time related code
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        await delay(8500)
+
+        await expect(
+            VSystem.connect(erin).ExecuteProposal(0)
+        ).to.emit(VSystem, "ProposalPassed");
+
+        // These should fail
+        await expect(
+            VSystem.connect(david).WithdrawMyTokens(0))
+        .to.be.revertedWith('You need to lock votes in order to take them out')
+        await expect(
+            VSystem.connect(erin).WithdrawMyTokens(0))
+        .to.be.revertedWith('You need to lock votes in order to take them out')
+
+        for (let thisUser of [ alice, bob, carol ]) {
+            await expect(VSystem.connect(thisUser).WithdrawMyTokens(0)
+            ).to.emit(VSystem, "IncentiveWithdrawed");
+
+            // This one should fail, no duplicate withdraws allowed
+            await expect(VSystem.connect(thisUser).WithdrawMyTokens(0)
+            ).to.be.revertedWith('You need to lock votes in order to take them out');
+
+        }
+        // Bob's new balance is his balance after votes + incentivizing was deducted
+        // plus the IndividualShare the contract held for each user
+        let proposalInfo = await VSystem.SeeProposalInfo(0);
+        expect(await CLD.balanceOf(bob.address))
+        .to.equal(BigInt(AfterVoteBalance) + BigInt(votes) + BigInt(proposalInfo[9]))
+
+        // The current contract balance (0) is:
+        // The balance after receiving votes+incentiveAmount minus
+        // the individual share each voter received minus
+        // the votes it received minus
+        // the amount that was burned plus the amount to the executioner
+        expect(await CLD.balanceOf(VSystem.address))
+        .to.equal(BigInt(ContractAfterVoteBalance) - (BigInt(proposalInfo[9]) * 
+        BigInt(3)) - BigInt(votes*3) - 
+        (BigInt(proposalInfo[10]) + BigInt(proposalInfo[11])))
 
     });
 
-    /*
-    *
-    * Things to do:
-    * Returning the tokens to the voters
-    * 
-    */
+    it("returns the incentives correctly if no voter appears", async function () {
+        const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
+        const { CLD } = await deployMockToken()
+        const { VSystem } = await deployVoting(CLD)
+        const votes = 1000
+        const incentiveAmount = 235720
+
+        const OGBalance = await CLD.balanceOf(bob.address)
+        for (let thisUser of [ alice, bob, carol ]) {
+             await expect(
+                VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
+            ).to.emit(VSystem, "ProposalIncentivized");
+        }
+        // Save this for later use
+        const ContractAfterVoteBalance = await CLD.balanceOf(VSystem.address)
+
+        const AfterVoteBalance = await CLD.balanceOf(bob.address)
+        
+        // Time related code
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        await delay(12000)
+
+        for (let thisUser of [ alice, bob, carol ]) {
+            await expect(
+               VSystem.connect(thisUser).WithdrawMyTokens(0)
+               ).to.emit(VSystem, "IncentiveWithdrawed");   
+        }
+        expect(await CLD.balanceOf(bob.address))
+        .to.equal(BigInt(AfterVoteBalance) + BigInt(incentiveAmount))
+        // The contract's empty
+        expect(await CLD.balanceOf(VSystem.address))
+        .to.equal(BigInt(ContractAfterVoteBalance) - (BigInt(incentiveAmount)*
+        BigInt(3))) // he is a big boy, look at him UwU
+
+
+    });
+
 
     // it("helpful comment, add more tests here", async function () {
     // });
