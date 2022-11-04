@@ -62,14 +62,16 @@ describe('VotingSystem', function () {
         const votes = 1000
         const incentiveAmount = 235720
 
+        await expect(VSystem.connect(alice).CastVote(votes, 0, 3)
+        ).to.revertedWith("VotingSystemV1.CastVote: You must either vote 'Yes' or 'No'");
         // Everyone should be able to vote
         for (let thisUser of [ alice, bob, carol, david ]) {
             await expect(VSystem.connect(thisUser).CastVote(votes, 0, 0)
             ).to.emit(VSystem, "CastedVote");
 
-            // This one will fail
+            // These will fail
             await expect(VSystem.connect(thisUser).CastVote(votes, 0, 0)
-            ).to.revertedWith('You already voted in this proposal');
+            ).to.revertedWith('VotingSystemV1.CastVote: You already voted in this proposal');
 
             await expect(
                 VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
@@ -79,7 +81,6 @@ describe('VotingSystem', function () {
             expect(userVotes[2]).to.be.true;
             expect(userVotes[0]).to.be.equal(votes, "This message shall not be seen, users have $(votes)")
         }
-
         // Check the proposal received the votes and the incentives
         const VSystemData = await VSystem.SeeProposalInfo(0)
         await expect(VSystemData[4]).to.be.equal(4)
@@ -92,12 +93,13 @@ describe('VotingSystem', function () {
 
         // These should all fail
         await expect(VSystem.connect(erin).CastVote(votes, 0, 0)
-        ).to.emit(VSystem, "CastedVote");
+        ).to.be.revertedWith('VotingSystemV1.CastVote: The voting period has ended');
+
         for (let thisUser of [ alice, bob, carol, david, erin ]) {
             await expect(
                 VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
             ).to.revertedWith(
-                'The voting period has ended, save for the next proposal!');
+                'VotingSystemV1.IncentivizeProposal: The voting period has ended, save for the next proposal!');
         }
 
     });
@@ -163,7 +165,7 @@ describe('VotingSystem', function () {
         // This one should fail
         await expect(
             VSystem.connect(erin).ExecuteProposal(0)
-        ).to.be.revertedWith('Proposal already executed!');
+        ).to.be.revertedWith('VotingSystemV1.ExecuteProposal: Proposal already executed!');
 
         // Check it's actually executed
         let proposalInfo = await VSystem.SeeProposalInfo(0);
@@ -216,10 +218,10 @@ describe('VotingSystem', function () {
         // These should fail
         await expect(
             VSystem.connect(david).WithdrawMyTokens(0))
-        .to.be.revertedWith('Proposal has not been executed!')
+        .to.be.revertedWith('VotingSystemV1.WithdrawMyTokens: Proposal has not been executed!')
         await expect(
             VSystem.connect(erin).WithdrawMyTokens(0))
-        .to.be.revertedWith('Proposal has not been executed!')
+        .to.be.revertedWith('VotingSystemV1.WithdrawMyTokens: Proposal has not been executed!')
 
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -232,10 +234,10 @@ describe('VotingSystem', function () {
         // These should fail
         await expect(
             VSystem.connect(david).WithdrawMyTokens(0))
-        .to.be.revertedWith('You need to lock votes in order to take them out')
+        .to.be.revertedWith('VotingSystemV1.WithdrawMyTokens: You have no VotesLocked in this proposal')
         await expect(
             VSystem.connect(erin).WithdrawMyTokens(0))
-        .to.be.revertedWith('You need to lock votes in order to take them out')
+        .to.be.revertedWith('VotingSystemV1.WithdrawMyTokens: You have no VotesLocked in this proposal')
 
         for (let thisUser of [ alice, bob, carol ]) {
             await expect(VSystem.connect(thisUser).WithdrawMyTokens(0)
@@ -243,7 +245,7 @@ describe('VotingSystem', function () {
 
             // This one should fail, no duplicate withdraws allowed
             await expect(VSystem.connect(thisUser).WithdrawMyTokens(0)
-            ).to.be.revertedWith('You need to lock votes in order to take them out');
+            ).to.be.revertedWith('VotingSystemV1.WithdrawMyTokens: You have no VotesLocked in this proposal');
 
         }
         // Bob's new balance is his balance after votes + incentivizing was deducted
