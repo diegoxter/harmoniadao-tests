@@ -144,16 +144,30 @@ describe('VotingSystem', function () {
             ).to.emit(VSystem, "ProposalIncentivized");
 
         }
-
-        expect(await CLD.balanceOf(VSystem.address)).to.be.equal((votes*4)+(incentiveAmount*4))
-
+        const OGCLDBalance = await CLD.balanceOf(VSystem.address)
+        expect(OGCLDBalance).to.be.equal((votes*4)+(incentiveAmount*4))
+        console.log(OGCLDBalance)
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         await delay(8500)
-        
+        let proposalInfBfr = await VSystem.SeeProposalInfo(0);
+
         await expect(
             VSystem.connect(erin).ExecuteProposal(0)
         ).to.emit(VSystem, "ProposalPassed");
+        console.log(await CLD.balanceOf(VSystem.address))
+
+        // Check it's actually executed
+        let proposalInfo = await VSystem.SeeProposalInfo(0);
+        let execusCut = await VSystem.ExecusCut();
+        let burnCut = await VSystem.BurnCut();
+        let totalTax = ((execusCut.toNumber()+burnCut.toNumber())*10000)/10000;
+        expect(proposalInfo[3]).to.be.above(0);
+        // Check ind share now
+        expect(proposalInfo[9]).to.equal((proposalInfBfr[8]-proposalInfBfr[10]-proposalInfBfr[11])/proposalInfBfr[4]);
+        // Total incentive now 
+        expect(proposalInfo[8]).to.equal(OGCLDBalance - totalTax);
+
 
     });
 
