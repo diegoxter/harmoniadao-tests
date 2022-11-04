@@ -54,7 +54,7 @@ describe('VotingSystem', function () {
 
         return { DAO, VSystem }
     };
-/*
+
     it('allows voting and incentivizing, rejects duplicate votes both when voting period ends', async function () {
         const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
@@ -125,15 +125,14 @@ describe('VotingSystem', function () {
         await DAO.connect(alice).NewDAOInVoting(CLD.address)
         expect(await VSystem.DAO()).to.be.equal(CLD.address)
     });
-*/
+
     it("executes the proposals correctly, burning and paying the executioner's cut", async function () {
         const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
         const { VSystem } = await deployVoting(CLD)
         const votes = 1000
         const incentiveAmount = 235720
-        console.log(CLD.address)
-        console.log(await VSystem.CLD())
+
         // Everyone should be able to vote
         for (let thisUser of [ alice, bob, carol, david ]) {
             await expect(VSystem.connect(thisUser).CastVote(votes, 0, 0)
@@ -146,30 +145,51 @@ describe('VotingSystem', function () {
         }
         const OGCLDBalance = await CLD.balanceOf(VSystem.address)
         expect(OGCLDBalance).to.be.equal((votes*4)+(incentiveAmount*4))
-        console.log(OGCLDBalance)
+        const OGProposalData = await VSystem.SeeProposalInfo(0)
+        const OGProposalIncAmount = OGProposalData[8]
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         await delay(8500)
         let proposalInfBfr = await VSystem.SeeProposalInfo(0);
+        // The balance in the contract should be the proposal 
+        // IncentiveAmount + ApprovingVotes (in this test case)
+        expect(OGCLDBalance)
+            .to.be.equal(BigInt(proposalInfBfr[8])+BigInt(proposalInfBfr[5]))
 
         await expect(
             VSystem.connect(erin).ExecuteProposal(0)
         ).to.emit(VSystem, "ProposalPassed");
-        console.log(await CLD.balanceOf(VSystem.address))
-
         // Check it's actually executed
         let proposalInfo = await VSystem.SeeProposalInfo(0);
-        let execusCut = await VSystem.ExecusCut();
-        let burnCut = await VSystem.BurnCut();
-        let totalTax = ((execusCut.toNumber()+burnCut.toNumber())*10000)/10000;
-        expect(proposalInfo[3]).to.be.above(0);
-        // Check ind share now
-        expect(proposalInfo[9]).to.equal((proposalInfBfr[8]-proposalInfBfr[10]-proposalInfBfr[11])/proposalInfBfr[4]);
-        // Total incentive now 
-        expect(proposalInfo[8]).to.equal(OGCLDBalance - totalTax);
+        // As the proposal passed it should be 1
+        expect(proposalInfo[3]).to.equal(1);
+        // Individual share should be:
+        // The total incentive amount minus taxes
+        // divided by the amount of voters
+        expect(proposalInfo[9])
+        .to.equal((proposalInfBfr[8]-proposalInfBfr[10]-proposalInfBfr[11])
+            / proposalInfBfr[4]);
+        // Total incentive now should be:
+        // The original IncentiveAmount minus both taxes
+        expect(proposalInfo[8]).to.equal(BigInt(OGProposalIncAmount) -
+            (BigInt(proposalInfBfr[10])+BigInt(proposalInfBfr[11])));
+        // The balance on the contract should be:
+        // The initial incentive amount (before the execution) 
+        // plus the amount of votes casted minus the taxes         
+        expect(await CLD.balanceOf(VSystem.address))
+        .to.equal(BigInt(OGProposalIncAmount)+BigInt(OGProposalData[5])-
+            (BigInt(OGProposalData[10])+BigInt(OGProposalData[11])));
 
+        // TO DO check the executer received the tokens
 
     });
+
+    /*
+    *
+    * Things to do:
+    * Returning the tokens to the voters
+    * 
+    */
 
     // it("helpful comment, add more tests here", async function () {
     // });
