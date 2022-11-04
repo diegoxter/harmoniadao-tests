@@ -54,7 +54,7 @@ describe('VotingSystem', function () {
 
         return { DAO, VSystem }
     };
-
+/*
     it('allows voting and incentivizing, rejects duplicate votes both when voting period ends', async function () {
         const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
@@ -84,7 +84,7 @@ describe('VotingSystem', function () {
         const VSystemData = await VSystem.SeeProposalInfo(0)
         await expect(VSystemData[4]).to.be.equal(4)
         await expect(VSystemData[5]).to.be.equal(votes*VSystemData[4])
-        await expect(VSystemData[7]).to.be.equal(incentiveAmount*VSystemData[4])
+        await expect(VSystemData[8]).to.be.equal(incentiveAmount*VSystemData[4])
 
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -125,14 +125,15 @@ describe('VotingSystem', function () {
         await DAO.connect(alice).NewDAOInVoting(CLD.address)
         expect(await VSystem.DAO()).to.be.equal(CLD.address)
     });
-
+*/
     it("executes the proposals correctly, burning and paying the executioner's cut", async function () {
         const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
         const { VSystem } = await deployVoting(CLD)
         const votes = 1000
         const incentiveAmount = 235720
-
+        console.log(CLD.address)
+        console.log(await VSystem.CLD())
         // Everyone should be able to vote
         for (let thisUser of [ alice, bob, carol, david ]) {
             await expect(VSystem.connect(thisUser).CastVote(votes, 0, 0)
@@ -141,7 +142,10 @@ describe('VotingSystem', function () {
             await expect(
                 VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
             ).to.emit(VSystem, "ProposalIncentivized");
+
         }
+
+        expect(await CLD.balanceOf(VSystem.address)).to.be.equal((votes*4)+(incentiveAmount*4))
 
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
