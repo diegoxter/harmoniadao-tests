@@ -50,7 +50,7 @@ describe('VotingSystem', function () {
         }
 
         // New test proposal, anyone can propose
-        await DAO.connect(bob).NewProposal('Test proposal #0', 15)
+        await DAO.connect(bob).CreateNewProposal(0, 0, 1000, 15)
 
         return { DAO, VSystem }
     };
