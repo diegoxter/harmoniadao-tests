@@ -131,7 +131,7 @@ describe('VotingSystem', function () {
     it("executes the proposals correctly, burning and paying the executioner's cut", async function () {
         const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
-        const { VSystem } = await deployVoting(CLD)
+        const { VSystem, DAO } = await deployVoting(CLD)
         const votes = 1000
         const incentiveAmount = 235720
 
@@ -191,6 +191,11 @@ describe('VotingSystem', function () {
         // The executer received the tokens
         expect(await CLD.balanceOf(erin.address))
         .to.equal(BigInt(ErinsBalance) + BigInt(OGProposalData[11]))
+
+        // The VotingSystem correctly sent the Execute code to the FakeDAO
+        let FakeDAOData = await DAO.Proposals(0)
+        await expect(FakeDAOData[5]).to.be.true
+
     });
 
     it("returns the tokens to each voter correctly, only when the voting is over", async function () {
