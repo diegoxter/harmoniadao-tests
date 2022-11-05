@@ -11,7 +11,8 @@
       "format:write": "prettier --write ./**/*.{js,ts,sol}",
       "prepare": "husky install",
       "test:auction": "hardhat test ./tests/CLDAuction.ts",
-      "test:treasury": "hardhat test ./tests/Treasury.ts"
+      "test:treasury": "hardhat test ./tests/Treasury.ts",
+      "slither": "py -m slither ."
     },
     "devDependencies": {
       "@commitlint/config-conventional": "^12.1.4",
