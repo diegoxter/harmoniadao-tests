@@ -20,14 +20,23 @@ describe('AllowancesV1', function () {
 
         return { Token }
     }
-    async function deployAllowance() {
+    async function deployAllowance(Token) {
         const [ alice, bob ] = await ethers.getSigners()
         const daoFactory = await ethers.getContractFactory('FakeDAO')
         const DAO = await daoFactory.deploy()
         await DAO.deployed()
 
+        const treasuryFactory = await ethers.getContractFactory(
+            'HarmoniaDAOTreasury'
+        )
+        const Treasury = await treasuryFactory.deploy(
+            DAO.address,
+            Token
+        )
+        await Treasury.deployed()
+
         const allowanceFactory = await ethers.getContractFactory('HarmoniaDAO_Allowances')
-        const AllowanceV1 = await allowanceFactory.deploy(DAO.address)
+        const AllowanceV1 = await allowanceFactory.deploy(DAO.address, Treasury.address)
         await AllowanceV1.deployed()
         // Lets connect both Allowances and DAO
         await DAO.connect(alice).SetAllowancesAddress(AllowanceV1.address)
@@ -53,19 +62,12 @@ describe('AllowancesV1', function () {
             AllowanceV1.address
         )).to.equal(TestValue)
 
-        return { DAO, AllowanceV1, TestValue }
+        return { DAO, Treasury, AllowanceV1, TestValue }
     };
-/*
-    it("gets successfully deployed", async function () {
-        const { AllowanceV1 } = await deployAllowance()
-        const AllowanceData = await AllowanceV1.GrantList(0)
 
-        //console.log(AllowanceData)
-    });
-
-    it("allows the dev to reclame the allowance, respecting the time between installments", async function () {
-        const [ alice, bob, david, erin ] = await ethers.getSigners()
-        const { AllowanceV1, TestValue } = await deployAllowance()
+    it("allows the dev to reclame the allowance respecting time, cancels allowance after ForgiveAllowance", async function () {
+        const [ alice, bob, david, erin, random ] = await ethers.getSigners()
+        const { DAO, Treasury, AllowanceV1, TestValue } = await deployAllowance(random.address)
         const AllowanceData = await AllowanceV1.GrantList(0)
 
         const BobOGEtherBalance = await ethers.provider.getBalance(bob.address)
@@ -96,39 +98,63 @@ describe('AllowancesV1', function () {
         .to.be.revertedWith('ReclameAllowance: Not enough time has passed since last withdraw')
         
         // Some time passing
-        await delay(1500)
+        await delay(4500)
         await expect(AllowanceV1.connect(bob).ReclameAllowance(0)).to.emit(AllowanceV1, 'AllowanceReclamed')
+        
+        // Some time passing
+        await delay(1500)
+        
+        const OGTreasuryBalance = await ethers.provider.getBalance(Treasury.address)
+        const OGRemValue = await AllowanceV1.GrantList(0)
+        // Draining the grant
+        await expect(DAO.connect(alice).ForgiveAllowanceDebt(0))
+        .to.emit(AllowanceV1, 'AllowanceForgiven')
+
+        await expect(await ethers.provider.getBalance(Treasury.address))
+        .to.equal(BigInt(OGTreasuryBalance) + BigInt(OGRemValue[5]))
+
+        // Should be inactive
+        await expect(AllowanceV1.connect(bob).ReclameAllowance(0))
+        .to.be.revertedWith('ReclameAllowance: This grant is not active')
     });
-*/
-    it("allows the dev to reclame the allowance respecting grant state", async function () {
-        const [ alice, bob, david ] = await ethers.getSigners()
-        const { DAO, AllowanceV1, TestValue } = await deployAllowance()
-        const AllowanceData = await AllowanceV1.grantList(0)
-console.log(AllowanceData[0])
+
+    it("pauses and unpauses ether grants effectively", async function () {
+        const [ alice, bob, david, random ] = await ethers.getSigners()
+        const { DAO, AllowanceV1, TestValue } = await deployAllowance(random.address)
+        
         // Lets pause the allowance
         await expect(DAO.connect(alice).PauseAllowance(0))
         .to.emit(AllowanceV1, 'AllowancePaused')
-console.log(AllowanceData[0])
 
         // Allowance should not be active
-        await expect(AllowanceData[0]).to.be.false
+        await expect((await AllowanceV1.GrantList(0))[0]).to.be.false
         await expect(DAO.connect(alice).PauseAllowance(0))
-        .to.be.revertedWith('ReclameAllowance: This grant is not active 1')
-        await expect(DAO.connect(alice).UnpauseAllowance(0))
-        .to.be.revertedWith('ReclameAllowance: This grant is not active 1')
-        // Time related code
-        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-        await delay(5000)
-
+        .to.be.revertedWith('PauseAllowance: Allowance must be unpaused')
         await expect(AllowanceV1.connect(bob).ReclameAllowance(0))
         .to.be.revertedWith('ReclameAllowance: This grant is not active')
+        // External actors not allowed
+        await expect(AllowanceV1.connect(david).ReclameAllowance(0))
+        .to.be.revertedWith('ReclameAllowance: This grant is not active')
 
-        // Lets pause the allowance
+        // Unpausing the allowance
+        await expect(DAO.connect(alice).UnpauseAllowance(0))
+        .to.emit(AllowanceV1, 'AllowanceUnpaused')
+         // Allowance should be active
+         await expect((await AllowanceV1.GrantList(0))[0]).to.be.true
+        
+         // Time related code
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        await delay(5000)
+        // External actors not allowed
+        await expect(AllowanceV1.connect(alice).ReclameAllowance(0))
+        .to.be.revertedWith('ReclameAllowance: You are not the owner of this grant')
 
+        await expect(AllowanceV1.connect(bob).ReclameAllowance(0))
+        .to.emit(AllowanceV1, 'AllowanceReclamed')
 
     });
 
-    it("forgives debt, virtually emptying any grant", async function () {
+    it("handles ERC20 allowances, allowance forgive", async function () {
     });
 
     // it("helpful comment, add more tests here", async function () {
