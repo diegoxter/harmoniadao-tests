@@ -360,7 +360,7 @@ describe('CLDAuction', function () {
                 thisUser.address
             )
             expect(ParticipantPoolShare[0]).to.be.at.least(
-                BigInt((TestValue * I) / Operator),
+                BigInt((TestValue * I) / Operator), // in this case, half their respective amounts
                 'This error shall not be seen as both participants have TestValue/Operator'
             )
 
@@ -403,10 +403,10 @@ describe('CLDAuction', function () {
             alice.address
         )
         expect(NewAlicePoolShare[0]).to.be.equal(
-            0, // The previous operations no ether
+            0, // The previous operations leave no ether
             'This error shall not be seen as Alice has retired all her ether in the sale'
         )
-        // Testing the balance holds the correct amount of ether
+        // Testing the contract holds the correct amount of ether
         const WhatAliceReceivedAfterRetiring =
             (AliceBalance * BigInt(AuctionRetireeFee)) / BigInt(10000)
         expect(
@@ -448,7 +448,7 @@ describe('CLDAuction', function () {
         const OneDevEtherBalance = await ethers.provider.getBalance(bob.address)
         const OtherDevEtherBalance = await ethers.provider.getBalance(carol.address)
         const DavidEtherBalance = await ethers.provider.getBalance(david.address)
-// aqui
+
         await expect(OneDevEtherBalance).to.be.at.most(
             BigInt(OneDevOGEtherBalance) - BigInt(TestValue * I) + (BigInt((TestValue * I) / Operator))
         )
@@ -472,9 +472,9 @@ describe('CLDAuction', function () {
         .to.at.least(BigInt(OtherDevEtherBalance) + BigInt(feeForEachDev))
 
         let shouldBeBalance = BigInt(DavidEtherBalance) + BigInt(BigInt(await AuctionInstance.ETCDeductedFromRetirees()) / BigInt(3))
-        
         await expect(await ethers.provider.getBalance(david.address))
-        .to.at.least(shouldBeBalance)
+        .to.equal(shouldBeBalance)
+        
         // The contract should be almost empty
         expect(await ethers.provider.getBalance(AuctionInstance.address)).to.be.at.most(5, "The contract should hold close to 0 ether")
     })
@@ -579,20 +579,20 @@ describe('CLDAuction', function () {
         const { DAO } = await deployDAO()
         const { Treasury } = await deployTreasury(DAO.address, random.address)
         // This first random address is a dummy address, we don't need to deploy anything here
-        const { AuctionInstance } = await deployAuctionFixture(
+        const { AuctionInstance, TestValue } = await deployAuctionFixture(
             DAO.address,
             random.address, // in normal circunstances this should be the token's address, but we are testing
             Treasury.address
         )
 
         //Can be changed without a problem
-        const TestValue = await ethers.utils.parseEther('0.004')
+        const Operator = 4
 
         for (let thisUser of [alice, bob, carol, david, erin]) {
             // Depositing some Ether
             await expect(
                 AuctionInstance.connect(thisUser).DepositETC({
-                    value: TestValue,
+                    value: TestValue * Operator,
                 })
             ).to.emit(AuctionInstance, 'ETCDeposited')
         }
@@ -608,8 +608,6 @@ describe('CLDAuction', function () {
                 bob.address
             )
         ).to.emit(AuctionInstance, 'DevRemoved')
-
-        
 
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -632,8 +630,6 @@ describe('CLDAuction', function () {
         
         await expect(await ethers.provider.getBalance(david.address))
         .to.at.least(shouldBeBalance)
-
-
     });
 
     // it("helpful comment, add more tests here", async function () {
