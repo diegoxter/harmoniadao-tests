@@ -108,7 +108,7 @@ describe('CLDAuction', function () {
 
         return { CLDAucFactory, AuctionInstance, TestValue }
     }
-
+    
     it('handles Ether deposits, denies them when not high enough and after auction expires', async function () {
         const [alice, bob, carol, david, erin, random] =
             await ethers.getSigners()
@@ -342,6 +342,7 @@ describe('CLDAuction', function () {
                 })
             ).to.emit(AuctionInstance, 'ETCDeposited')
         }
+
         const OneOGContractEtherBalance = await ethers.provider.getBalance(
             AuctionInstance.address
         )
@@ -445,20 +446,40 @@ describe('CLDAuction', function () {
 
         // Verify the ETCDeductedFromRetirees gets sent to the devs
         const OneDevEtherBalance = await ethers.provider.getBalance(bob.address)
-
+        const OtherDevEtherBalance = await ethers.provider.getBalance(carol.address)
+        const DavidEtherBalance = await ethers.provider.getBalance(david.address)
+// aqui
         await expect(OneDevEtherBalance).to.be.at.most(
             BigInt(OneDevOGEtherBalance) - BigInt(TestValue * I) + (BigInt((TestValue * I) / Operator))
         )
+        await expect(await ethers.provider.getBalance(carol.address)).to.be.at.most(
+            BigInt(OneDevOGEtherBalance) - BigInt(TestValue * I) + (BigInt((TestValue * I) / Operator))
+        )
+        await expect(await ethers.provider.getBalance(david.address)).to.be.at.most(
+            BigInt(OneDevOGEtherBalance) - BigInt(TestValue * I) + (BigInt((TestValue * I) / Operator))
+        )
 
-        expect(await AuctionInstance.connect(alice).WithdrawETC()).to.emit(
+        await expect(AuctionInstance.connect(alice).WithdrawETC()).to.emit(
             AuctionInstance,
             'ETCDWithdrawed'
         )
+        // Correctly increases each dev ether's balance
+        let feeForEachDev = BigInt(await AuctionInstance.ETCDeductedFromRetirees()) / BigInt(await AuctionInstance.ActiveDevs())
 
+        await expect(await ethers.provider.getBalance(bob.address))
+        .to.at.least(BigInt(OneDevEtherBalance) + BigInt(feeForEachDev))
+        await expect(await ethers.provider.getBalance(carol.address))
+        .to.at.least(BigInt(OtherDevEtherBalance) + BigInt(feeForEachDev))
+
+        let shouldBeBalance = BigInt(DavidEtherBalance) + BigInt(BigInt(await AuctionInstance.ETCDeductedFromRetirees()) / BigInt(3))
+        
+        await expect(await ethers.provider.getBalance(david.address))
+        .to.at.least(shouldBeBalance)
+        // The contract should be almost empty
         expect(await ethers.provider.getBalance(AuctionInstance.address)).to.be.at.most(5, "The contract should hold close to 0 ether")
     })
 
-    it('handles OnlyDAO modifier correctly, also adds devs as needed', async function () {
+    it('handles OnlyDAO modifier correctly, also adds and removes devs as needed', async function () {
         // We will connect to the DAO via the deployer, Alice. In normal circunstances, the voting module will take the decisions
         const [alice, bob, carol, david, erin, random, random2, random3] =
             await ethers.getSigners()
@@ -470,6 +491,7 @@ describe('CLDAuction', function () {
             random.address, // in normal circunstances this should be the token's address, but we are testing
             Treasury.address
         )
+
         // Set the Treasury in the DAO, alice is the deployer
         await DAO.connect(alice).SetTreasury(Treasury.address)
         // All these tests should be reverted because:
@@ -485,6 +507,16 @@ describe('CLDAuction', function () {
                     bob.address,
                 ])
             ).to.be.revertedWith('This can only be done by the DAO')
+            await expect(
+                AuctionInstance.connect(thisUser).RemDev(thisUser.address)
+            ).to.be.revertedWith('This can only be done by the DAO')
+            await expect(
+                AuctionInstance.connect(thisUser).RemDevs([
+                    david.address,
+                    carol.address,
+                    bob.address,
+                ])
+            ).to.be.revertedWith('This can only be done by the DAO')
         }
         for (let thisUser of [bob, carol, david]) {
             // They are already devs
@@ -494,7 +526,7 @@ describe('CLDAuction', function () {
                     thisUser.address
                 )
             ).to.be.revertedWith(
-                'CLDAuction.AddDev: This user is already set as a dev'
+                'CLDAuction.AddDev: This user is already a dev'
             )
             await expect(
                 DAO.connect(alice).AddAucInstanceDevAddresses(
@@ -502,7 +534,25 @@ describe('CLDAuction', function () {
                     [david.address, carol.address, bob.address]
                 )
             ).to.be.revertedWith(
-                'CLDAuction.AddDev: This user is already set as a dev'
+                'CLDAuction.AddDev: This user is already a dev'
+            )
+
+            // They are not devs
+            await expect(
+                DAO.connect(alice).RemAucInstanceDevAddress(
+                    AuctionInstance.address,
+                    erin.address
+                )
+            ).to.be.revertedWith(
+                'CLDAuction.RemDev: This user is not a dev'
+            )
+            await expect(
+                DAO.connect(alice).RemAucInstanceDevAddresses(
+                    AuctionInstance.address,
+                    [alice.address, erin.address, random.address]
+                )
+            ).to.be.revertedWith(
+                'CLDAuction.RemDev: This user is not a dev'
             )
         }
 
@@ -513,6 +563,8 @@ describe('CLDAuction', function () {
                 erin.address
             )
         ).to.emit(AuctionInstance, 'NewDevAdded')
+        // If this works everything below will too
+        expect(await AuctionInstance.isDev(erin.address)).to.be.true
         await expect(
             DAO.connect(alice).AddAucInstanceDevAddresses(
                 AuctionInstance.address,
@@ -520,6 +572,69 @@ describe('CLDAuction', function () {
             )
         ).to.emit(AuctionInstance, 'NewDevAdded')
     })
+
+    it("correctly pays to active devs if one of them is removed", async function () {
+        const [alice, bob, carol, david, erin, random, random2, random3] =
+        await ethers.getSigners()
+        const { DAO } = await deployDAO()
+        const { Treasury } = await deployTreasury(DAO.address, random.address)
+        // This first random address is a dummy address, we don't need to deploy anything here
+        const { AuctionInstance } = await deployAuctionFixture(
+            DAO.address,
+            random.address, // in normal circunstances this should be the token's address, but we are testing
+            Treasury.address
+        )
+
+        //Can be changed without a problem
+        const TestValue = await ethers.utils.parseEther('0.004')
+
+        for (let thisUser of [alice, bob, carol, david, erin]) {
+            // Depositing some Ether
+            await expect(
+                AuctionInstance.connect(thisUser).DepositETC({
+                    value: TestValue,
+                })
+            ).to.emit(AuctionInstance, 'ETCDeposited')
+        }
+
+        // Verify the ETCDeductedFromRetirees gets sent to the devs
+        const OneDevEtherBalance = await ethers.provider.getBalance(bob.address)
+        const OtherDevEtherBalance = await ethers.provider.getBalance(carol.address)
+        const DavidEtherBalance = await ethers.provider.getBalance(david.address)
+
+        await expect(
+            DAO.connect(alice).RemAucInstanceDevAddress(
+                AuctionInstance.address,
+                bob.address
+            )
+        ).to.emit(AuctionInstance, 'DevRemoved')
+
+        
+
+        // Time related code
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        await delay(12500)
+        
+        await expect(AuctionInstance.connect(alice).WithdrawETC()).to.emit(
+            AuctionInstance,
+            'ETCDWithdrawed'
+        )
+
+        // Correctly increases each dev ether's balance
+        let feeForEachDev = BigInt(await AuctionInstance.ETCDeductedFromRetirees()) / BigInt(await AuctionInstance.ActiveDevs())
+
+        await expect(await ethers.provider.getBalance(bob.address))
+        .to.at.least(BigInt(OneDevEtherBalance) + BigInt(feeForEachDev))
+        await expect(await ethers.provider.getBalance(carol.address))
+        .to.at.least(BigInt(OtherDevEtherBalance) + BigInt(feeForEachDev))
+
+        let shouldBeBalance = BigInt(DavidEtherBalance) + BigInt(BigInt(await AuctionInstance.ETCDeductedFromRetirees()) / BigInt(3))
+        
+        await expect(await ethers.provider.getBalance(david.address))
+        .to.at.least(shouldBeBalance)
+
+
+    });
 
     // it("helpful comment, add more tests here", async function () {
     // });
