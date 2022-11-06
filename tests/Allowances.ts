@@ -20,21 +20,43 @@ describe('AllowancesV1', function () {
 
         return { Token }
     }
-    async function deployAllowance(CLD) {
+    async function deployAllowance() {
+        const [ alice, bob, david, erin, maria ] = await ethers.getSigners()
         const daoFactory = await ethers.getContractFactory('FakeDAO')
         const DAO = await daoFactory.deploy()
         await DAO.deployed()
 
         const allowanceFactory = await ethers.getContractFactory('HarmoniaDAO_Allowances')
-        const AllowanceV1 = await allowanceFactory.deploy(DAO.address, CLD.address)
+        const AllowanceV1 = await allowanceFactory.deploy(DAO.address)
         await AllowanceV1.deployed()
+        // Lets connect both Allowances and DAO
+        await DAO.connect(alice).SetAllowancesAddress(AllowanceV1.address)
+
+        // Let's set a test ether grant
+        const TestValue = ethers.utils.parseEther('1.0')
+
+        await DAO.connect(alice).RegisterAllowance(
+            [erin.address, maria.address],
+            true,
+            TestValue,
+            '0x0000000000000000000000000000000000000000',
+            5,
+            5)
 
         return { AllowanceV1 }
     };
 
     it("gets successfully deployed", async function () {
-        const { Token } = await deployMockToken('MockCLD', 'MCLD')
-        const { AllowanceV1 } = await deployAllowance(Token)
+        const { AllowanceV1 } = await deployAllowance()
+    });
+
+    it("allows each dev to reclame the allowance", async function () {
+    });
+
+    it("allows each dev to reclame the allowance respecting grant state", async function () {
+    });
+
+    it("forgives debt, virtually emptying any grant", async function () {
     });
 
     // it("helpful comment, add more tests here", async function () {
