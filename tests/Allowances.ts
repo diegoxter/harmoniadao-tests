@@ -84,7 +84,7 @@ describe('AllowancesV1', function () {
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         await delay(3500)
         
-        await expect(AllowanceV1.connect(bob).ReclameAllowance(0)).to.emit(AllowanceV1, 'AllowanceReclamed')
+        await expect(AllowanceV1.connect(bob).ReclameAllowance(0)).to.emit(AllowanceV1, 'AllowanceReclaimed')
         await expect(await ethers.provider.getBalance(bob.address)).to.at.within(
             BigInt(BobOGEtherBalance) + ((BigInt(TestValue) / BigInt(2)) / BigInt(AllowanceData[7])),
             BigInt(BobOGEtherBalance) + (BigInt(TestValue) / BigInt(AllowanceData[7])))
@@ -99,19 +99,23 @@ describe('AllowancesV1', function () {
         
         // Some time passing
         await delay(4500)
-        await expect(AllowanceV1.connect(bob).ReclameAllowance(0)).to.emit(AllowanceV1, 'AllowanceReclamed')
+        await expect(AllowanceV1.connect(bob).ReclameAllowance(0))
+        .to.emit(AllowanceV1, 'AllowanceReclaimed')
         
         // Some time passing
         await delay(1500)
         
         const OGTreasuryBalance = await ethers.provider.getBalance(Treasury.address)
         const OGRemValue = await AllowanceV1.GrantList(0)
+
         // Draining the grant
         await expect(DAO.connect(alice).ForgiveAllowanceDebt(0))
         .to.emit(AllowanceV1, 'AllowanceForgiven')
 
         await expect(await ethers.provider.getBalance(Treasury.address))
         .to.equal(BigInt(OGTreasuryBalance) + BigInt(OGRemValue[5]))
+        await expect(await ethers.provider.getBalance(AllowanceV1.address))
+        .to.equal(0)
 
         // Should be inactive
         await expect(AllowanceV1.connect(bob).ReclameAllowance(0))
@@ -120,7 +124,7 @@ describe('AllowancesV1', function () {
 
     it("pauses and unpauses ether grants effectively", async function () {
         const [ alice, bob, david, random ] = await ethers.getSigners()
-        const { DAO, AllowanceV1, TestValue } = await deployAllowance(random.address)
+        const { DAO, AllowanceV1 } = await deployAllowance(random.address)
         
         // Lets pause the allowance
         await expect(DAO.connect(alice).PauseAllowance(0))
@@ -150,11 +154,65 @@ describe('AllowancesV1', function () {
         .to.be.revertedWith('ReclameAllowance: You are not the owner of this grant')
 
         await expect(AllowanceV1.connect(bob).ReclameAllowance(0))
-        .to.emit(AllowanceV1, 'AllowanceReclamed')
+        .to.emit(AllowanceV1, 'AllowanceReclaimed')
 
     });
 
-    it("handles ERC20 allowances, allowance forgive", async function () {
+    it("handles ERC20 allowances, cancels allowance after ForgiveAllowance", async function () {
+        const [ alice, bob ] = await ethers.getSigners()
+        const { Token } = await deployMockToken("Name1", "NM1")
+        const { DAO, Treasury, AllowanceV1 } = await deployAllowance(Token.address)
+
+        // We need a new Allowance, accepting ERC20
+        await expect(DAO.connect(alice).RegisterNewAllowance(
+            bob.address,
+            false,
+            BigInt(10000000000000000000),
+            Token.address,
+            5,
+            5)).to.emit(AllowanceV1, 'NewAllowance')
+
+        // We should see two (or more) at the same time
+        await expect((await AllowanceV1.GrantList(0))[0]).to.be.true
+        await expect((await AllowanceV1.GrantList(1))[0]).to.be.true
+
+        // Sending some tokens to Allowance
+        await Token.connect(alice).transfer(
+            AllowanceV1.address,
+            10000000000000000000n
+        )
+        expect(await Token.balanceOf(AllowanceV1.address)).to.equal(
+            10000000000000000000n
+        )
+        
+        // Time related code
+        const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+        await delay(4500)
+
+        await expect(AllowanceV1.connect(bob).ReclameAllowance(1)).to.emit(AllowanceV1, 'AllowanceReclaimed')
+        expect(await Token.balanceOf(bob.address)).to.equal(
+            BigInt((await AllowanceV1.GrantList(1))[4]) / BigInt((await AllowanceV1.GrantList(1))[7])
+        )
+
+        // Some time passing
+        await delay(1500)
+
+        const OGTreasuryTokenBalance = await Token.balanceOf(Treasury.address)
+        const OGRemValue = await AllowanceV1.GrantList(1)
+
+        // Draining the grant
+        await expect(DAO.connect(alice).ForgiveAllowanceDebt(1))
+        .to.emit(AllowanceV1, 'AllowanceForgiven')
+
+        await expect(await Token.balanceOf(Treasury.address))
+        .to.equal(BigInt(OGTreasuryTokenBalance) + BigInt(OGRemValue[5]))
+        await expect(await Token.balanceOf(AllowanceV1.address))
+        .to.equal(0)
+
+        // Should be inactive
+        await expect(AllowanceV1.connect(bob).ReclameAllowance(1))
+        .to.be.revertedWith('ReclameAllowance: This grant is not active')
+
     });
 
     // it("helpful comment, add more tests here", async function () {
