@@ -215,6 +215,39 @@ describe('AllowancesV1', function () {
 
     });
 
+    it('handles OnlyDAO modifier correctly', async function () {
+        const [ alice, bob, random ] = await ethers.getSigners()
+        const { DAO, AllowanceV1 } = await deployAllowance(random.address)
+
+        // These will fail
+        for (let thisUser of [ alice, bob, random ] ) {
+            await expect(AllowanceV1.connect(thisUser).ChangeDAO(thisUser.address))
+                .to.be.revertedWith("This can only be done by the DAO")
+
+            await expect(AllowanceV1.connect(thisUser).ChangeTreasury(thisUser.address))
+                .to.be.revertedWith("This can only be done by the DAO")
+
+            await expect(AllowanceV1.connect(thisUser).RegisterAllowance(
+                    bob.address,
+                    false,
+                    BigInt(10000000000000000000),
+                    random.address,
+                    5,
+                    5)).to.be.revertedWith("This can only be done by the DAO")
+                
+            await expect(AllowanceV1.connect(thisUser).PauseAllowance(0))
+                .to.be.revertedWith("This can only be done by the DAO")
+
+            await expect(AllowanceV1.connect(thisUser).UnpauseAllowance(0))
+                .to.be.revertedWith("This can only be done by the DAO")
+
+            await expect(AllowanceV1.connect(thisUser).ForgiveAllowanceDebt(0))
+                .to.be.revertedWith("This can only be done by the DAO")
+        } 
+
+    });
+
+
     // it("helpful comment, add more tests here", async function () {
     // });
 });
