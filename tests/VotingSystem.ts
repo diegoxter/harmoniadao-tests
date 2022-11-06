@@ -34,7 +34,7 @@ describe('VotingSystem', function () {
         // Lets connect both VSystem and DAO
         await DAO.connect(alice).SetVotingAddress(VSystem.address)
 
-        // Give some tokens to the other test users, approve the VotingSystem
+        // Give some tokens to the other test users, approve the VotingSystem allowance
         await expect(
             CLD.connect(alice).approve(VSystem.address, 1000000000000000000n)
         );
@@ -50,6 +50,7 @@ describe('VotingSystem', function () {
         }
 
         // New test proposal, anyone can propose
+        // TO DO test this options when more execution code is ready
         await DAO.connect(bob).CreateNewProposal(0, 0, 1000, 15)
 
         return { DAO, VSystem }
@@ -62,6 +63,7 @@ describe('VotingSystem', function () {
         const votes = 1000
         const incentiveAmount = 235720
 
+        // Will fail, you can only vote 0 or 1
         await expect(VSystem.connect(alice).CastVote(votes, 0, 3)
         ).to.revertedWith("VotingSystemV1.CastVote: You must either vote 'Yes' or 'No'");
         // Everyone should be able to vote
@@ -83,7 +85,9 @@ describe('VotingSystem', function () {
         }
         // Check the proposal received the votes and the incentives
         const VSystemData = await VSystem.SeeProposalInfo(0)
+        // 4 voters
         await expect(VSystemData[4]).to.be.equal(4)
+        // Votes * voters = approving votes
         await expect(VSystemData[5]).to.be.equal(votes*VSystemData[4])
         await expect(VSystemData[8]).to.be.equal(incentiveAmount*VSystemData[4])
 
@@ -94,7 +98,6 @@ describe('VotingSystem', function () {
         // These should all fail
         await expect(VSystem.connect(erin).CastVote(votes, 0, 0)
         ).to.be.revertedWith('VotingSystemV1.CastVote: The voting period has ended');
-
         for (let thisUser of [ alice, bob, carol, david, erin ]) {
             await expect(
                 VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
@@ -149,14 +152,14 @@ describe('VotingSystem', function () {
         expect(OGCLDBalance).to.be.equal((votes*4)+(incentiveAmount*4))
         const OGProposalData = await VSystem.SeeProposalInfo(0)
         const OGProposalIncAmount = OGProposalData[8]
+        expect(OGProposalIncAmount).to.equal(incentiveAmount*4)
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         await delay(8500)
-        let proposalInfBfr = await VSystem.SeeProposalInfo(0);
         // The balance in the contract should be the proposal 
         // IncentiveAmount + ApprovingVotes (in this test case)
         expect(OGCLDBalance)
-            .to.be.equal(BigInt(proposalInfBfr[8])+BigInt(proposalInfBfr[5]))
+            .to.be.equal(BigInt(OGProposalIncAmount)+BigInt(OGProposalData[5]))
         
         let ErinsBalance = await CLD.balanceOf(erin.address)
         await expect(
@@ -175,12 +178,12 @@ describe('VotingSystem', function () {
         // The total incentive amount minus taxes
         // divided by the amount of voters
         expect(proposalInfo[9])
-        .to.equal((proposalInfBfr[8]-proposalInfBfr[10]-proposalInfBfr[11])
-            / proposalInfBfr[4]);
+        .to.equal((OGProposalData[8]-OGProposalData[10]-OGProposalData[11])
+            / OGProposalData[4]);
         // Total incentive now should be:
         // The original IncentiveAmount minus both taxes
         expect(proposalInfo[8]).to.equal(BigInt(OGProposalIncAmount) -
-            (BigInt(proposalInfBfr[10])+BigInt(proposalInfBfr[11])));
+            (BigInt(OGProposalData[10])+BigInt(OGProposalData[11])));
         // The balance on the contract should be:
         // The initial incentive amount (before the execution) 
         // plus the amount of votes casted minus the taxes         
@@ -219,7 +222,7 @@ describe('VotingSystem', function () {
 
         const AfterVoteBalance = await CLD.balanceOf(bob.address)
         expect(OGBalance)
-        .to.equal(BigInt(AfterVoteBalance) + BigInt(votes) + BigInt(235720))
+        .to.equal(BigInt(AfterVoteBalance) + BigInt(votes) + BigInt(incentiveAmount))
         // These should fail
         await expect(
             VSystem.connect(david).WithdrawMyTokens(0))
@@ -258,6 +261,9 @@ describe('VotingSystem', function () {
         let proposalInfo = await VSystem.SeeProposalInfo(0);
         expect(await CLD.balanceOf(bob.address))
         .to.equal(BigInt(AfterVoteBalance) + BigInt(votes) + BigInt(proposalInfo[9]))
+        // Erin's balance should be the generic balance before voting + executors cut 
+        await expect(await CLD.balanceOf(erin.address))
+            .to.equal(BigInt(OGBalance) + BigInt(proposalInfo[11]))
 
         // The current contract balance (0) is:
         // The balance after receiving votes+incentiveAmount minus
@@ -268,14 +274,12 @@ describe('VotingSystem', function () {
         .to.equal(BigInt(ContractAfterVoteBalance) - (BigInt(proposalInfo[9]) * 
         BigInt(3)) - BigInt(votes*3) - 
         (BigInt(proposalInfo[10]) + BigInt(proposalInfo[11])))
-
     });
 
     it("returns the incentives correctly if no voter appears", async function () {
-        const [ alice, bob, carol, david, erin ] = await ethers.getSigners();
+        const [ alice, bob, carol ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
         const { VSystem } = await deployVoting(CLD)
-        const votes = 1000
         const incentiveAmount = 235720
 
         const OGBalance = await CLD.balanceOf(bob.address)
@@ -286,7 +290,6 @@ describe('VotingSystem', function () {
         }
         // Save this for later use
         const ContractAfterVoteBalance = await CLD.balanceOf(VSystem.address)
-
         const AfterVoteBalance = await CLD.balanceOf(bob.address)
         
         // Time related code
@@ -304,10 +307,7 @@ describe('VotingSystem', function () {
         expect(await CLD.balanceOf(VSystem.address))
         .to.equal(BigInt(ContractAfterVoteBalance) - (BigInt(incentiveAmount)*
         BigInt(3))) // he is a big boy, look at him UwU
-
-
     });
-
 
     // it("helpful comment, add more tests here", async function () {
     // });
