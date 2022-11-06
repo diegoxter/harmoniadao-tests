@@ -276,18 +276,22 @@ describe('VotingSystem', function () {
         (BigInt(proposalInfo[10]) + BigInt(proposalInfo[11])))
     });
 
-    it("returns the incentives correctly if no voter appears", async function () {
+    it("returns the incentives correctly if no voter appears, handling the (lack of) execution", async function () {
         const [ alice, bob, carol ] = await ethers.getSigners();
         const { CLD } = await deployMockToken()
         const { VSystem } = await deployVoting(CLD)
         const incentiveAmount = 235720
 
         const OGBalance = await CLD.balanceOf(bob.address)
+        await expect(VSystem.connect(carol).ExecuteProposal(0))
+        .to.be.revertedWith(
+            "VotingSystemV1.ExecuteProposal: Voting has not ended");
         for (let thisUser of [ alice, bob, carol ]) {
              await expect(
                 VSystem.connect(thisUser).IncentivizeProposal(0, incentiveAmount)
             ).to.emit(VSystem, "ProposalIncentivized");
         }
+
         // Save this for later use
         const ContractAfterVoteBalance = await CLD.balanceOf(VSystem.address)
         const AfterVoteBalance = await CLD.balanceOf(bob.address)
@@ -296,7 +300,11 @@ describe('VotingSystem', function () {
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
         await delay(12000)
 
-        for (let thisUser of [ alice, bob, carol ]) {
+        await expect(VSystem.connect(carol).ExecuteProposal(0))
+        .to.be.revertedWith(
+            "VotingSystemV1.ExecuteProposal: Can't execute proposals without voters!");
+        
+            for (let thisUser of [ alice, bob, carol ]) {
             await expect(
                VSystem.connect(thisUser).WithdrawMyTokens(0)
                ).to.emit(VSystem, "IncentiveWithdrawed");   
