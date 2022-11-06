@@ -165,6 +165,11 @@ describe('CLDAuction', function () {
                     value: TestValue,
                 })
             ).to.be.revertedWith('CLDAuction.DepositETC: The sale is over')
+            await expect(
+                AuctionInstance.connect(thisUser).RetireFromAuction(
+                    TestValue
+                )
+            ).to.be.revertedWith('CLDAuction.RetireFromAuction: The sale is over, you can only withdraw your CLD')
         }
     })
 
@@ -205,6 +210,9 @@ describe('CLDAuction', function () {
             AuctionInstance,
             'ETCDWithdrawed'
         )
+        await expect(
+            AuctionInstance.connect(alice).WithdrawETC()
+        ).to.be.revertedWith('CLDAuction.WithdrawETC: No ether on this contract')
 
         const AuctionNewEtherBalance = await ethers.provider.getBalance(
             AuctionInstance.address
@@ -355,6 +363,11 @@ describe('CLDAuction', function () {
                     BigInt((TestValue * I) / Operator)
                 )
             ).to.emit(AuctionInstance, 'ParticipantRetired')
+            await expect(
+                AuctionInstance.connect(thisUser).RetireFromAuction(
+                    BigInt((TestValue * (I*I)))
+                )
+            ).to.be.revertedWith("CLDAuction.RetireFromAuction: You can't withdraw this many ETC")
 
             const ParticipantPoolShare = await AuctionInstance.CheckParticipant(
                 thisUser.address
@@ -390,6 +403,10 @@ describe('CLDAuction', function () {
         const SecondContractBalance = BigInt(
             await ethers.provider.getBalance(AuctionInstance.address)
         )
+        // Checking this require works
+        await expect(
+            AuctionInstance.connect(alice).WithdrawCLD()
+        ).to.be.revertedWith("CLDAuction.WithdrawCLD: The sale is not over yet")
         // Here we empty Alice deposits
         const AliceData = await AuctionInstance.CheckParticipant(
             alice.address
