@@ -32,6 +32,13 @@ module.exports = {
             },
             chainId: 11155111,
         },
+        matic_testnet: {
+            url: `https://matic-mumbai.chainstacklabs.com`,
+            /*accounts: {
+                mnemonic: MNEMONIC,
+            },*/
+            chainId: 80001,
+        },
     },
     settings: {
         optimizer: {

@@ -45,9 +45,13 @@ describe('CLDAuction', function () {
 
     async function transferMockToken(CLD_Address, DAO, deployer, Treasury, to) {
         //Should be sent to the treasury
-        await CLD_Address.connect(deployer).transfer(
+        await expect(CLD_Address.connect(deployer).transfer(
             Treasury.address,
             10000000000000000000n
+        )).to.changeTokenBalances(
+            CLD_Address,
+            [deployer, Treasury],
+            [-10000000000000000000n, 10000000000000000000n]
         )
         expect(await CLD_Address.balanceOf(Treasury.address)).to.equal(
             10000000000000000000n
@@ -262,17 +266,6 @@ describe('CLDAuction', function () {
             'This error shall not be seen, balance should be (TestValue * 5) ether'
         )
 
-        // Everyone has 1/5 of the pool
-        for (let thisUser of [alice, bob, carol, david, erin]) {
-            const ParticipantPoolShare = await AuctionInstance.CheckParticipant(
-                thisUser.address
-            )
-            expect(ParticipantPoolShare[2]).to.equal(
-                2000,
-                'This error shall not be seen, everyone has 1/5 of the PoolShare'
-            )
-        }
-
         //Now Alice has 60% of the pool
         await expect(
             AuctionInstance.connect(alice).DepositETC({
@@ -287,6 +280,7 @@ describe('CLDAuction', function () {
             6000,
             'This error shall not be seen, Alice has 60% of the TokenShare'
         )
+        
         for (let thisUser of [bob, carol, david, erin]) {
             const ParticipantData = await AuctionInstance.CheckParticipant(
                 thisUser.address
