@@ -3,6 +3,7 @@ require('dotenv').config()
 require('@nomiclabs/hardhat-ethers')
 
 const MNEMONIC = process.env.MNEMONIC
+const RIVET_KEY = process.env.RIVET_KEY
 
 module.exports = {
     solidity: '0.8.17',
@@ -12,10 +13,24 @@ module.exports = {
     networks: {
         fantom_testnet: {
             url: `https://rpc.testnet.fantom.network/`,
-            /*accounts: {
+            accounts: {
                 mnemonic: MNEMONIC,
-            },*/
+            },
             chainId: 4002,
+        },
+        ETC: {
+            url: `https://${RIVET_KEY}.etc.rpc.rivet.cloud/`,
+            accounts: {
+                mnemonic: MNEMONIC,
+            },
+            chainId: 4002,
+        },
+        sepolia: {
+            url: `https://${RIVET_KEY}.sepolia.rpc.rivet.cloud/`,
+            accounts: {
+                mnemonic: MNEMONIC,
+            },
+            chainId: 11155111,
         },
     },
     settings: {
