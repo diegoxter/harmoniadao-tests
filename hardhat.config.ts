@@ -39,6 +39,13 @@ module.exports = {
             },*/
             chainId: 80001,
         },
+        nova_network: {
+            url: `https://dev.rpc.novanetwork.io/`,
+            /*accounts: {
+                mnemonic: MNEMONIC,
+            },*/
+            chainId: 107,
+        },
     },
     settings: {
         optimizer: {
