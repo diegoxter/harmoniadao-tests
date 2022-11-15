@@ -21,6 +21,7 @@ describe('AllowancesV1', function () {
 
         return { Token }
     }
+
     async function deployAllowance(Token) {
         const [ alice, bob ] = await ethers.getSigners()
         const daoFactory = await ethers.getContractFactory('FakeDAO')
@@ -46,7 +47,7 @@ describe('AllowancesV1', function () {
         await DAO.connect(alice).SetAllowancesAddress(AllowanceV1.address)
 
         // Let's set a test ether grant
-        const TestValue = ethers.utils.parseEther('0.001')
+        const TestValue = ethers.utils.parseEther('0.0001')
 
         await expect(DAO.connect(alice).RegisterNewAllowance(
             bob.address,
@@ -74,10 +75,10 @@ describe('AllowancesV1', function () {
         const { DAO, Treasury, AllowanceV1, TestValue } = await deployAllowance(erin.address)
         const AllowanceData = await AllowanceV1.GrantList(0)
 
-        const BobOGEtherBalance = await ethers.provider.getBalance(bob.address)
         // Cant reclaim yet
         await expect(AllowanceV1.connect(bob).ReclaimAllowance(0))
         .to.be.revertedWith('ReclaimAllowance: Not enough time has passed since last withdraw')
+
         // Not an allowed dev
         await expect(AllowanceV1.connect(alice).ReclaimAllowance(0))
         .to.be.revertedWith('ReclaimAllowance: You are not the owner of this grant')
@@ -86,12 +87,10 @@ describe('AllowancesV1', function () {
         
         // Time related code
         const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-        await delay(3500)
+        await delay(5500)
+        await expect(AllowanceV1.connect(bob).ReclaimAllowance(0))
+            .to.changeEtherBalance(bob.address, BigInt(TestValue) / BigInt(AllowanceData[7]));
         
-        await expect(AllowanceV1.connect(bob).ReclaimAllowance(0)).to.emit(AllowanceV1, 'AllowanceReclaimed')
-        await expect(await ethers.provider.getBalance(bob.address)).to.at.within(
-            BigInt(BobOGEtherBalance) + ((BigInt(TestValue) / BigInt(3)) / BigInt(AllowanceData[7])),
-            BigInt(BobOGEtherBalance) + (BigInt(TestValue) / BigInt(AllowanceData[7])))
         // Some time passing
         await delay(3500)
         
@@ -128,7 +127,7 @@ describe('AllowancesV1', function () {
         // Return the ether
         const TreasuryBalance = await ethers.provider.getBalance(Treasury.address)
         await expect(DAO.connect(alice).TreasuryEtherTransfer(TreasuryBalance, alice.address))
-        .to.changeEtherBalance(Treasury.address, "-600000000000000");
+        .to.changeEtherBalance(Treasury.address, "-60000000000000");
     });
 
     it("pauses and unpauses ether grants effectively", async function () {
@@ -171,7 +170,7 @@ describe('AllowancesV1', function () {
         // Return the ether
         const TreasuryBalance = await ethers.provider.getBalance(Treasury.address)
         await expect(DAO.connect(alice).TreasuryEtherTransfer(TreasuryBalance, alice.address))
-        .to.changeEtherBalance(Treasury.address, "-800000000000000");
+        .to.changeEtherBalance(Treasury.address, "-80000000000000");
     });
 
     it("handles ERC20 allowances, cancels allowance after ForgiveAllowance", async function () {
@@ -185,7 +184,7 @@ describe('AllowancesV1', function () {
         // Return the ether
         const TreasuryBalance = await ethers.provider.getBalance(Treasury.address)
         await expect(DAO.connect(alice).TreasuryEtherTransfer(TreasuryBalance, alice.address))
-        .to.changeEtherBalance(Treasury.address, "-1000000000000000");
+        .to.changeEtherBalance(Treasury.address, "-100000000000000");
 
         // We need a new Allowance, accepting ERC20
         await expect(DAO.connect(alice).RegisterNewAllowance(
@@ -240,7 +239,6 @@ describe('AllowancesV1', function () {
         // Should be inactive
         await expect(AllowanceV1.connect(bob).ReclaimAllowance(1))
         .to.be.revertedWith('ReclaimAllowance: This grant is not active')
-
     });
 
     it('handles OnlyDAO modifier correctly', async function () {
@@ -279,10 +277,8 @@ describe('AllowancesV1', function () {
         // Return the ether
         const TreasuryBalance = await ethers.provider.getBalance(Treasury.address)
         await expect(DAO.connect(alice).TreasuryEtherTransfer(TreasuryBalance, alice.address))
-        .to.changeEtherBalance(Treasury.address, "-1000000000000000");
-
+        .to.changeEtherBalance(Treasury.address, "-100000000000000");
     });
-
 
     // it("helpful comment, add more tests here", async function () {
     // });
